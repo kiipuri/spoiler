@@ -11,6 +11,8 @@ pub enum Route {
 
 pub enum FocusableWidget {
     TorrentList,
+    Help,
+    None,
 }
 
 pub struct App {
@@ -35,6 +37,7 @@ impl App {
     fn next_previous_match(&mut self, i: Option<usize>) {
         match self.focused_widget {
             FocusableWidget::TorrentList => self.selected_torrent = i,
+            _ => (),
         }
     }
 
@@ -70,10 +73,22 @@ impl App {
 
     pub fn stack_push(&mut self, route: Route) {
         self.navigation_stack.push(route);
+        self.set_focused_widget_on_stack_change();
     }
 
     pub fn stack_pop(&mut self) {
         self.navigation_stack.pop();
+        self.set_focused_widget_on_stack_change();
+    }
+
+    fn set_focused_widget_on_stack_change(&mut self) {
+        let widget = match self.navigation_stack.last() {
+            Some(Route::Overview) => FocusableWidget::TorrentList,
+            Some(Route::TorrentInfo) => FocusableWidget::None,
+            _ => FocusableWidget::None,
+        };
+
+        self.focused_widget = widget;
     }
 
     pub fn get_all_torrents(&mut self) {

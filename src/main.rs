@@ -12,7 +12,7 @@ use crossterm::{
 };
 use key_handlers::handler;
 use tui::{backend::CrosstermBackend, Terminal};
-use ui::draw_overview;
+use ui::draw;
 
 fn main() -> Result<(), io::Error> {
     setup_terminal()?;
@@ -22,10 +22,12 @@ fn main() -> Result<(), io::Error> {
         ..Default::default()
     };
     app.get_all_torrents();
+    app.torrents
+        .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     loop {
         terminal.draw(|f| {
-            draw_overview(f, &mut app);
+            draw(f, &mut app);
         })?;
 
         if let Event::Key(key) = event::read()? {
