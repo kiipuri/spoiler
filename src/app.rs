@@ -4,13 +4,23 @@ pub struct Torrent {
     pub name: String,
 }
 
-pub enum Route {
+pub enum RouteId {
     Overview,
     TorrentInfo,
 }
 
+pub struct Route {
+    pub id: RouteId,
+    pub focused_widget: FocusableWidget,
+}
+
 pub enum FocusableWidget {
     TorrentList,
+    // Help,
+    None,
+}
+
+pub enum FloatingWidget {
     Help,
     None,
 }
@@ -19,25 +29,46 @@ pub struct App {
     pub navigation_stack: Vec<Route>,
     pub torrents: Vec<Torrent>,
     pub selected_torrent: Option<usize>,
-    pub focused_widget: FocusableWidget,
+    pub floating_widget: FloatingWidget,
 }
 
 impl Default for App {
     fn default() -> Self {
         App {
-            navigation_stack: vec![Route::Overview],
+            navigation_stack: vec![Route {
+                id: RouteId::Overview,
+                focused_widget: FocusableWidget::TorrentList,
+            }],
             torrents: vec![],
             selected_torrent: Some(0),
-            focused_widget: FocusableWidget::TorrentList,
+            floating_widget: FloatingWidget::None,
         }
     }
 }
 
 impl App {
+    pub fn last_route_id(&self) -> Option<&RouteId> {
+        if let Some(i) = self.navigation_stack.last() {
+            Some(&i.id)
+        } else {
+            None
+        }
+    }
+
+    pub fn last_route_focused_widget(&self) -> Option<&FocusableWidget> {
+        if let Some(i) = self.navigation_stack.last() {
+            Some(&i.focused_widget)
+        } else {
+            None
+        }
+    }
+
     fn next_previous_match(&mut self, i: Option<usize>) {
-        match self.focused_widget {
-            FocusableWidget::TorrentList => self.selected_torrent = i,
-            _ => (),
+        if let Some(a) = self.navigation_stack.last() {
+            match a.focused_widget {
+                FocusableWidget::TorrentList => self.selected_torrent = i,
+                _ => (),
+            }
         }
     }
 
@@ -73,22 +104,10 @@ impl App {
 
     pub fn stack_push(&mut self, route: Route) {
         self.navigation_stack.push(route);
-        self.set_focused_widget_on_stack_change();
     }
 
     pub fn stack_pop(&mut self) {
         self.navigation_stack.pop();
-        self.set_focused_widget_on_stack_change();
-    }
-
-    fn set_focused_widget_on_stack_change(&mut self) {
-        let widget = match self.navigation_stack.last() {
-            Some(Route::Overview) => FocusableWidget::TorrentList,
-            Some(Route::TorrentInfo) => FocusableWidget::None,
-            _ => FocusableWidget::None,
-        };
-
-        self.focused_widget = widget;
     }
 
     pub fn get_all_torrents(&mut self) {

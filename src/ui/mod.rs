@@ -6,19 +6,24 @@ use tui::{
     Frame,
 };
 
-use crate::app::{FocusableWidget, Route};
+use crate::app::{FloatingWidget, FocusableWidget, RouteId};
 
 use super::app::App;
 
 pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
-    match app.navigation_stack.last() {
-        Some(Route::Overview) => draw_overview(f, app),
-        Some(Route::TorrentInfo) => draw_torrent_info(f, app),
+    match app.last_route_id() {
+        Some(RouteId::Overview) => draw_overview(f, app),
+        Some(RouteId::TorrentInfo) => draw_torrent_info(f, app),
         _ => (),
     }
-
-    match app.focused_widget {
-        FocusableWidget::Help => draw_help(f, app),
+    // match app.navigation_stack.last() {
+    //     Some(Route::Overview) => draw_overview(f, app),
+    //     Some(Route::TorrentInfo) => draw_torrent_info(f, app),
+    //     _ => (),
+    // }
+    //
+    match app.floating_widget {
+        FloatingWidget::Help => draw_help(f, app),
         _ => (),
     }
 }
