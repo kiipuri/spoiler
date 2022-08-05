@@ -45,14 +45,23 @@ fn handle_right(app: &mut App) {
         Some(FocusableWidget::TorrentList) => {
             app.stack_push(Route {
                 id: RouteId::TorrentInfo,
-                focused_widget: FocusableWidget::None,
+                focused_widget: FocusableWidget::Tabs,
             });
         }
+        Some(FocusableWidget::Tabs) => app.next_tab(),
         _ => (),
     }
 }
 
 fn handle_left(app: &mut App) {
+    match app.last_route_focused_widget() {
+        Some(FocusableWidget::Tabs) => {
+            app.previous_tab();
+            return;
+        }
+        _ => (),
+    }
+
     match app.last_route_id() {
         Some(RouteId::TorrentInfo) => {
             app.stack_pop();
@@ -66,5 +75,15 @@ fn handle_help(app: &mut App) {
 }
 
 fn handle_esc(app: &mut App) {
+    if matches!(app.floating_widget, FloatingWidget::None) {
+        match app.last_route_focused_widget() {
+            Some(FocusableWidget::Tabs) => {
+                app.stack_pop();
+                return;
+            }
+            _ => (),
+        }
+    }
+
     app.floating_widget = FloatingWidget::None;
 }

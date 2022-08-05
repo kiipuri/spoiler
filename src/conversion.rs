@@ -23,3 +23,13 @@ pub fn convert_bytes(size: i64) -> String {
     let adjusted_byte = byte.get_adjusted_unit(byteunit);
     adjusted_byte.to_string()
 }
+
+pub fn convert_rate(rate: i64) -> String {
+    let rate = convert_bytes(rate);
+    format!("{}/s", rate)
+}
+
+pub fn get_percentage(percent: f32) -> String {
+    let percent = percent * 100f32;
+    format!("{} %", percent)
+}

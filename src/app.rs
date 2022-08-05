@@ -1,5 +1,7 @@
+use std::sync::{Arc, Mutex};
+
 use transmission_rpc::{
-    types::{RpcResponse, Torrent, Torrents},
+    types::{RpcResponse, SessionGet, Torrent, Torrents},
     TransClient,
 };
 
@@ -15,7 +17,7 @@ pub struct Route {
 
 pub enum FocusableWidget {
     TorrentList,
-    None,
+    Tabs,
 }
 
 pub enum FloatingWidget {
@@ -27,13 +29,31 @@ pub struct App {
     pub navigation_stack: Vec<Route>,
     pub torrents: RpcResponse<Torrents<Torrent>>,
     pub selected_torrent: Option<usize>,
+    pub selected_tab: usize,
     pub floating_widget: FloatingWidget,
     pub should_quit: bool,
-    pub torrent_client: TransClient,
 }
 
 impl App {
-    pub fn new(torrent_client: TransClient, torrents: RpcResponse<Torrents<Torrent>>) -> Self {
+    pub async fn new() -> Self {
+        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let response: transmission_rpc::types::Result<RpcResponse<SessionGet>> =
+            client.session_get().await;
+        match response {
+            Ok(_) => (),
+            Err(_) => panic!("Oh no!"),
+        }
+
+        let response = client.torrent_get(None, None).await;
+        let mut torrents = response.unwrap();
+        torrents.arguments.torrents.sort_by(|a, b| {
+            a.name
+                .as_ref()
+                .unwrap()
+                .to_lowercase()
+                .cmp(&b.name.as_ref().unwrap().to_lowercase())
+        });
+
         Self {
             navigation_stack: vec![Route {
                 id: RouteId::TorrentList,
@@ -41,8 +61,8 @@ impl App {
             }],
             floating_widget: FloatingWidget::None,
             selected_torrent: Some(0),
+            selected_tab: 0,
             should_quit: false,
-            torrent_client,
             torrents,
         }
     }
@@ -109,19 +129,30 @@ impl App {
         self.navigation_stack.pop();
     }
 
-    // pub async fn get_all_torrents_loop(&mut self) {
-    //     tokio::spawn(async move {
-    //         self.torrents = vec![];
-    //         loop {
-    //             tokio::time::sleep(Duration::from_secs(1)).await;
-    //             let loop_res = self.torrent_client.torrent_get(None, None).await;
-    //
-    //             let mut torrents = res.lock().unwrap();
-    //             if let Ok(i) = loop_res {
-    //                 *torrents = i;
-    //             }
-    //             drop(torrents);
-    //         }
-    //     });
-    // }
+    pub fn next_tab(&mut self) {
+        self.selected_tab = (self.selected_tab + 1) % 3;
+    }
+
+    pub fn previous_tab(&mut self) {
+        if self.selected_tab > 0 {
+            self.selected_tab -= 1;
+        } else {
+            self.selected_tab = 3 - 1;
+        }
+    }
+}
+
+pub async fn get_all_torrents_loop(app: Arc<Mutex<App>>) {
+    let client = TransClient::new("http://localhost:9091/transmission/rpc");
+    let mut torrents = client.torrent_get(None, None).await.unwrap();
+    torrents.arguments.torrents.sort_by(|a, b| {
+        a.name
+            .as_ref()
+            .unwrap()
+            .to_lowercase()
+            .cmp(&b.name.as_ref().unwrap().to_lowercase())
+    });
+
+    let mut app = app.lock().unwrap();
+    app.torrents = torrents;
 }

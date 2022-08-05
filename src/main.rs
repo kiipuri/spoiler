@@ -3,13 +3,7 @@ mod conversion;
 mod key_handlers;
 mod ui;
 
-use std::{
-    io::{self, Write},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-
-use app::App;
+use app::{get_all_torrents_loop, App};
 use crossterm::{
     event::{self, poll, Event, KeyCode, KeyEvent},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen},
@@ -17,9 +11,10 @@ use crossterm::{
 };
 use key_handlers::handler;
 use log::{error, LevelFilter};
-use transmission_rpc::{
-    types::{RpcResponse, SessionGet},
-    TransClient,
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 use tui::{backend::CrosstermBackend, Terminal};
 
@@ -31,38 +26,22 @@ enum InputEvent {
 }
 
 #[tokio::main]
-async fn main() -> transmission_rpc::types::Result<()> {
-    setup_terminal()?;
-
-    let mut terminal = start_terminal(io::stdout())?;
-
+async fn main() -> io::Result<()> {
     tui_logger::init_logger(LevelFilter::Error).unwrap();
     tui_logger::set_default_level(log::LevelFilter::Trace);
 
-    let client = TransClient::new("http://localhost:9091/transmission/rpc");
-    let response: transmission_rpc::types::Result<RpcResponse<SessionGet>> =
-        client.session_get().await;
-    match response {
-        Ok(_) => (),
-        Err(_) => panic!("Oh no!"),
-    }
+    setup_terminal()?;
+    let mut terminal = start_terminal(io::stdout())?;
 
-    let response = client.torrent_get(None, None).await;
-    let torrents = response.unwrap();
-
-    let app = Arc::new(Mutex::new(App::new(client, torrents)));
+    let app = Arc::new(Mutex::new(App::new().await));
     let app_ui = Arc::clone(&app);
     let app_events = Arc::clone(&app);
 
     tokio::spawn(async move {
-        let client = TransClient::new("http://localhost:9091/transmission/rpc");
         loop {
+            let app = app.clone();
+            get_all_torrents_loop(app).await;
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let response = client.torrent_get(None, None).await;
-            if let Ok(i) = response {
-                let mut app = app.lock().unwrap();
-                app.torrents = i;
-            }
         }
     });
 
@@ -88,6 +67,7 @@ async fn main() -> transmission_rpc::types::Result<()> {
     loop {
         let app = app_ui.clone();
         let app = app.lock().unwrap();
+
         terminal.draw(|f| {
             draw(f, &app);
         })?;
