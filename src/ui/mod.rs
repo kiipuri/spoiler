@@ -1,15 +1,20 @@
-use crate::app::{FloatingWidget, FocusableWidget, RouteId, Torrent};
+use crate::{
+    app::{FloatingWidget, RouteId},
+    conversion::convert_bytes,
+};
+use byte_unit::Byte;
 use tui::{
     backend::Backend,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Row, Table, TableState},
+    widgets::{Block, Borders, Clear, Row, Table, TableState},
     Frame,
 };
+use tui_logger::TuiLoggerWidget;
 
 use super::app::App;
 
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     match app.last_route_id() {
         Some(RouteId::TorrentList) => draw_torrent_list(f, app),
         Some(RouteId::TorrentInfo) => draw_torrent_info(f, app),
@@ -17,57 +22,72 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     }
 
     match app.floating_widget {
-        FloatingWidget::Help => draw_help(f, app),
+        FloatingWidget::Help => draw_help(f),
         _ => (),
     }
 }
 
 fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .split(f.size());
+
     let block = Block::default().title("Torrents").borders(Borders::ALL);
     let mut rows = vec![];
-    for torrent in &app.torrents {
-        rows.push(Row::new(vec![
-            torrent.name.to_owned(),
-            torrent.id.to_string(),
-        ]));
+    let info: Vec<String> = app
+        .torrents
+        .arguments
+        .torrents
+        .iter()
+        .map(|it| format!("{:?}", &it.name.as_ref().unwrap()))
+        .collect();
+
+    for torrent in info {
+        rows.push(Row::new(vec![torrent]));
     }
 
     let mut state = TableState::default();
     state.select(app.selected_torrent);
 
     let table = Table::new(rows)
-        .block(block)
+        .block(block.clone())
         .widths(&[
             Constraint::Ratio(1, 2),
             Constraint::Ratio(1, 4),
             Constraint::Ratio(1, 4),
         ])
         .highlight_style(Style::default().bg(Color::Red));
-    f.render_stateful_widget(table, f.size(), &mut state);
+    f.render_stateful_widget(table, chunks[0], &mut state);
 
-    // let paragraph = Paragraph::new(format!("{:#?}", &app.torrents));
-    // f.render_widget(paragraph, f.size());
+    let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
+    f.render_widget(logs, chunks[1]);
 }
 
-fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &mut App) {
-    // let torrent = &app.torrents[app.selected_torrent.unwrap()];
-    let torrent = Torrent::default();
-    // draw_torrent_info_overview(f, app, torrent);
-    draw_torrent_info_files(f, app, &torrent);
+fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &App) {
+    draw_torrent_info_overview(f, app);
 }
 
-fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, torrent: &Torrent) {
+fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App) {
     let chunks = Layout::default()
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
         .split(f.size());
 
+    let torrent = &app.torrents.arguments.torrents[app.selected_torrent.unwrap()];
+    // let thing = torrent.total_size.as_ref().cloned();
+    let size = torrent.total_size.as_ref().unwrap();
+    let size = convert_bytes(size.to_owned());
+
     let info_block = Block::default().title("Information").borders(Borders::ALL);
     let info_rows = vec![
-        Row::new(vec!["Name", &torrent.name]),
-        Row::new(vec!["Total size", &torrent.total_size]),
-        Row::new(vec!["Percent done", &torrent.percent_done]),
-        Row::new(vec!["Path", &torrent.location]),
-        Row::new(vec!["Magnet", &torrent.magnet]),
+        Row::new(vec!["Name", torrent.name.as_ref().unwrap()]),
+        Row::new(vec!["Total size", size.as_str()]),
+        // Row::new(vec![
+        //     "Percent done",
+        //     torrent.percent_done.as_ref().unwrap().to_string().as_str(),
+        // ]),
+        Row::new(vec!["Path", torrent.download_dir.as_ref().unwrap()]),
+        // Row::new(vec!["Magnet", torrent.hash_string.as_ref().unwrap()]),
     ];
 
     let info_table = Table::new(info_rows)
@@ -76,13 +96,13 @@ fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, torrent: 
 
     let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
     let transfer_rows = vec![
-        Row::new(vec!["Size", &torrent.total_size]),
-        Row::new(vec!["Downloaded", &torrent.downloaded]),
-        Row::new(vec!["Download speed", &torrent.download_speed]),
-        Row::new(vec!["Download limit", &torrent.download_limit]),
-        Row::new(vec!["Ratio", &torrent.ratio]),
-        Row::new(vec!["State", &torrent.state]),
-        Row::new(vec!["Peers", &torrent.peers]),
+        // Row::new(vec!["Size", &torrent.total_size]),
+        // Row::new(vec!["Downloaded", &torrent.downloaded]),
+        // Row::new(vec!["Download speed", &torrent.download_speed]),
+        // Row::new(vec!["Download limit", &torrent.download_limit]),
+        // Row::new(vec!["Ratio", &torrent.ratio]),
+        // Row::new(vec!["State", &torrent.state]),
+        // Row::new(vec!["Peers", &torrent.peers]),
     ];
 
     let transfer_table = Table::new(transfer_rows)
@@ -93,29 +113,29 @@ fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, torrent: 
     f.render_widget(transfer_table, chunks[1]);
 }
 
-fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &mut App, torrent: &Torrent) {
-    app.get_torrent_files(torrent.id);
+// fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, torrent: &Torrent) {
+//     // app.get_torrent_files(torrent.id);
+//
+//     let block = Block::default().title("Files").borders(Borders::ALL);
+//     let mut rows = vec![];
+//     for file in &app.torrent_files {
+//         rows.push(Row::new(vec![file.name.to_owned(), file.done.to_owned()]));
+//     }
+//
+//     let table = Table::new(rows).block(block).widths(&[
+//         Constraint::Percentage(50),
+//         Constraint::Percentage(50),
+//         // Constraint::Percentage(16),
+//         // Constraint::Percentage(16),
+//         // Constraint::Percentage(16),
+//         // Constraint::Percentage(16),
+//     ]);
+//     f.render_widget(table, f.size());
+// }
 
-    let block = Block::default().title("Files").borders(Borders::ALL);
-    let mut rows = vec![];
-    for file in &app.torrent_files {
-        rows.push(Row::new(vec![file.name.to_owned(), file.done.to_owned()]));
-    }
-
-    let table = Table::new(rows).block(block).widths(&[
-        Constraint::Percentage(50),
-        Constraint::Percentage(50),
-        // Constraint::Percentage(16),
-        // Constraint::Percentage(16),
-        // Constraint::Percentage(16),
-        // Constraint::Percentage(16),
-    ]);
-    f.render_widget(table, f.size());
-}
-
-fn draw_help<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn draw_help<B: Backend>(f: &mut Frame<B>) {
     let block = Block::default().title("Help").borders(Borders::ALL);
-    let area = floating_rect(f, app);
+    let area = floating_rect(f);
     let rows = vec![
         Row::new(vec!["j / Down", "Move down"]),
         Row::new(vec!["k / Up", "Move up"]),
@@ -130,7 +150,7 @@ fn draw_help<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(table, area);
 }
 
-fn floating_rect<B: Backend>(f: &mut Frame<B>, app: &App) -> Rect {
+fn floating_rect<B: Backend>(f: &mut Frame<B>) -> Rect {
     let float_layout = Layout::default()
         .direction(tui::layout::Direction::Vertical)
         .constraints([
