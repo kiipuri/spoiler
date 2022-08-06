@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use transmission_rpc::{
-    types::{RpcResponse, SessionGet, Torrent, Torrents},
+    types::{RpcResponse, SessionGet, Torrent, TorrentAddArgs, Torrents},
     TransClient,
 };
 
@@ -18,6 +18,7 @@ pub struct Route {
 pub enum FocusableWidget {
     TorrentList,
     Tabs,
+    FileList,
 }
 
 pub enum FloatingWidget {
@@ -30,6 +31,7 @@ pub struct App {
     pub torrents: RpcResponse<Torrents<Torrent>>,
     pub selected_torrent: Option<usize>,
     pub selected_tab: usize,
+    pub selected_file: Option<usize>,
     pub floating_widget: FloatingWidget,
     pub should_quit: bool,
 }
@@ -61,6 +63,7 @@ impl App {
             }],
             floating_widget: FloatingWidget::None,
             selected_torrent: Some(0),
+            selected_file: None,
             selected_tab: 0,
             should_quit: false,
             torrents,
@@ -83,42 +86,17 @@ impl App {
         }
     }
 
-    fn next_previous_match(&mut self, i: Option<usize>) {
-        if let Some(a) = self.navigation_stack.last() {
-            match a.focused_widget {
-                FocusableWidget::TorrentList => self.selected_torrent = i,
-                _ => (),
-            }
-        }
-    }
-
     pub fn next(&mut self) {
-        let i = match self.selected_torrent {
-            Some(i) => {
-                if i >= self.torrents.arguments.torrents.len() - 1 {
-                    Some(0)
-                } else {
-                    Some(i + 1)
-                }
-            }
-            None => Some(0),
-        };
-
-        self.next_previous_match(i);
+        self.selected_torrent =
+            Some((self.selected_torrent.unwrap() + 1) % self.torrents.arguments.torrents.len());
     }
 
     pub fn previous(&mut self) {
-        let i = match self.selected_torrent {
-            Some(i) => {
-                if i == 0 {
-                    Some(self.torrents.arguments.torrents.len() - 1)
-                } else {
-                    Some(i - 1)
-                }
-            }
-            None => Some(0),
-        };
-        self.next_previous_match(i);
+        if self.selected_torrent > Some(0) {
+            self.selected_torrent = Some(self.selected_torrent.unwrap() - 1);
+        } else {
+            self.selected_torrent = Some(self.torrents.arguments.torrents.len() - 1);
+        }
     }
 
     pub fn stack_push(&mut self, route: Route) {
@@ -139,6 +117,52 @@ impl App {
         } else {
             self.selected_tab = 3 - 1;
         }
+    }
+
+    pub fn next_file(&mut self) {
+        self.selected_file = Some(
+            (self.selected_file.unwrap() + 1)
+                % self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+                    .files
+                    .as_ref()
+                    .unwrap()
+                    .len(),
+        );
+    }
+
+    pub fn previous_file(&mut self) {
+        if self.selected_file.unwrap() > 0 {
+            self.selected_file = Some(self.selected_file.unwrap() - 1);
+        } else {
+            self.selected_file = Some(
+                self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+                    .files
+                    .as_ref()
+                    .unwrap()
+                    .len()
+                    - 1,
+            )
+        }
+    }
+
+    pub async fn increment_priority(&mut self) {
+        self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+            .priorities
+            .as_mut()
+            .unwrap()[self.selected_file.unwrap()] = 1i8;
+
+        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let add = TorrentAddArgs {
+            filename: Some("archlinux-2022.07.01-x86_64.iso.torrent".to_string()),
+            ..TorrentAddArgs::default()
+        };
+        if let Err(_) = client.torrent_add(add).await {
+            println!("fucked up");
+        };
+
+        // client
+        //     .torrent_remove(vec![transmission_rpc::types::Id::Id(0)], false)
+        //     .await;
     }
 }
 

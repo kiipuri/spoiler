@@ -136,18 +136,36 @@ fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
 fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let block = Block::default().title("Files").borders(Borders::ALL);
     let mut rows = vec![];
+    let priorities = app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
+        .priorities
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|f| f.to_string())
+        .collect::<Vec<String>>();
+
+    let mut index = 0;
     for file in app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
         .files
         .as_ref()
         .unwrap()
     {
-        rows.push(Row::new(vec![file.name.as_str()]));
+        rows.push(Row::new(vec![
+            file.name.as_str(),
+            priorities[index].as_str(),
+        ]));
+        index += 1;
     }
 
+    let mut state = TableState::default();
+    state.select(app.selected_file);
+
     let table = Table::new(rows)
+        .header(Row::new(vec!["Filename", "Priority"]))
         .block(block)
-        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)]);
-    f.render_widget(table, area);
+        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+        .highlight_style(Style::default().bg(Color::Red));
+    f.render_stateful_widget(table, area, &mut state);
 }
 
 fn draw_help<B: Backend>(f: &mut Frame<B>) {
