@@ -1,14 +1,15 @@
 mod app;
 mod conversion;
+mod io_handler;
 mod key_handlers;
 mod ui;
 
 use app::{get_all_torrents_loop, App};
 use crossterm::{
-    event::{self, poll, Event, KeyCode, KeyEvent},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen},
     ExecutableCommand,
 };
+use io_handler::{Events, InputEvent};
 use key_handlers::handler;
 use log::{error, LevelFilter};
 use std::{
@@ -20,22 +21,13 @@ use tui::{backend::CrosstermBackend, Terminal};
 
 use crate::ui::draw;
 
-enum InputEvent {
-    Input(KeyEvent),
-    Tick,
-}
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     tui_logger::init_logger(LevelFilter::Error).unwrap();
     tui_logger::set_default_level(log::LevelFilter::Trace);
 
-    setup_terminal()?;
-    let mut terminal = start_terminal(io::stdout())?;
-
     let app = Arc::new(Mutex::new(App::new().await));
     let app_ui = Arc::clone(&app);
-    let app_events = Arc::clone(&app);
 
     tokio::spawn(async move {
         loop {
@@ -45,45 +37,37 @@ async fn main() -> io::Result<()> {
         }
     });
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    if let Err(_) = start_ui(&app_ui).await {
+        error!("ui loop errored!");
+    };
+    Ok(())
+}
 
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            if poll(Duration::from_millis(200)).unwrap() {
-                if let Event::Key(key) = event::read().unwrap() {
-                    if let Err(_) = tx.send(InputEvent::Input(key)).await {
-                        error!("event poll errored");
-                    };
-                }
-            } else {
-                if let Err(_) = tx.send(InputEvent::Tick).await {
-                    error!("event poll errored");
-                }
-            }
-        }
-    });
+async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
+    setup_terminal()?;
+    let mut terminal = start_terminal(io::stdout())?;
+
+    let tick_rate = Duration::from_millis(200);
+    let mut events = Events::new(tick_rate).await;
 
     loop {
-        let app = app_ui.clone();
-        let app = app.lock().unwrap();
+        let app = app.clone();
+        let mut app = app.lock().unwrap();
 
         terminal.draw(|f| {
             draw(f, &app);
         })?;
 
+        match events.next().await {
+            InputEvent::Input(key) => handler(key.code, &mut app),
+            InputEvent::Tick => (),
+        }
+
         if app.should_quit {
             break;
         }
 
-        drop(app);
-        match rx.recv().await.unwrap_or(InputEvent::Tick) {
-            InputEvent::Input(key) => match key.code {
-                KeyCode::Char('q') => app_events.lock().unwrap().should_quit = true,
-                _ => handler(key.code, &mut app_events.lock().unwrap()),
-            },
-            InputEvent::Tick => (),
-        }
+        drop(app)
     }
 
     terminal.clear()?;
