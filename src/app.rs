@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use transmission_rpc::{
-    types::{RpcResponse, SessionGet, Torrent, TorrentAddArgs, Torrents},
+    types::{Id, RpcResponse, SessionGet, Torrent, TorrentAction, TorrentGetField, Torrents},
     TransClient,
 };
 
@@ -34,6 +34,8 @@ pub struct App {
     pub selected_file: Option<usize>,
     pub floating_widget: FloatingWidget,
     pub should_quit: bool,
+    pub sort_descending: bool,
+    pub sort_column: u32,
 }
 
 impl App {
@@ -67,6 +69,8 @@ impl App {
             selected_tab: 0,
             should_quit: false,
             torrents,
+            sort_descending: true,
+            sort_column: 0,
         }
     }
 
@@ -150,23 +154,43 @@ impl App {
             .priorities
             .as_mut()
             .unwrap()[self.selected_file.unwrap()] = 1i8;
+    }
 
+    pub async fn toggle_torrent_pause(&mut self) {
         let client = TransClient::new("http://localhost:9091/transmission/rpc");
-        let add = TorrentAddArgs {
-            filename: Some("archlinux-2022.07.01-x86_64.iso.torrent".to_string()),
-            ..TorrentAddArgs::default()
-        };
-        if let Err(_) = client.torrent_add(add).await {
-            println!("fucked up");
-        };
 
-        // client
-        //     .torrent_remove(vec![transmission_rpc::types::Id::Id(0)], false)
-        //     .await;
+        let id = self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+            .id
+            .unwrap();
+
+        let status = client
+            .torrent_get(Some(vec![TorrentGetField::Status]), Some(vec![Id::Id(id)]))
+            .await
+            .unwrap()
+            .arguments
+            .torrents[0]
+            .status;
+
+        let mut action = TorrentAction::Stop;
+        if status == Some(0) {
+            action = TorrentAction::Start;
+        }
+
+        client
+            .torrent_action(
+                action,
+                vec![Id::Id(
+                    self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+                        .id
+                        .unwrap(),
+                )],
+            )
+            .await
+            .unwrap();
     }
 }
 
-pub async fn get_all_torrents_loop(app: Arc<Mutex<App>>) {
+pub async fn get_all_torrents(app: &Arc<Mutex<App>>) {
     let client = TransClient::new("http://localhost:9091/transmission/rpc");
     let mut torrents = client.torrent_get(None, None).await.unwrap();
     torrents.arguments.torrents.sort_by(|a, b| {
@@ -178,5 +202,9 @@ pub async fn get_all_torrents_loop(app: Arc<Mutex<App>>) {
     });
 
     let mut app = app.lock().unwrap();
+
+    if !app.sort_descending {
+        torrents.arguments.torrents.reverse();
+    }
     app.torrents = torrents;
 }
