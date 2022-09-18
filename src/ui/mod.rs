@@ -1,8 +1,7 @@
 use crate::{
     app::{FloatingWidget, RouteId},
-    conversion::{convert_bytes, convert_rate, get_percentage},
+    conversion::{convert_bytes, convert_rate, get_percentage, status_string},
 };
-use log::error;
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -36,27 +35,38 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     let block = Block::default().title("Torrents").borders(Borders::ALL);
     let mut rows = vec![];
-    let torrents: Vec<String> = app
-        .torrents
-        .arguments
-        .torrents
-        .iter()
-        .map(|it| format!("{}", &it.name.as_ref().unwrap()))
-        .collect();
 
-    for torrent in torrents {
-        rows.push(Row::new(vec![torrent]));
+    for torrent in &app.torrents.arguments.torrents {
+        rows.push(Row::new(vec![
+            torrent.name.as_ref().unwrap().to_owned(),
+            status_string(&torrent.status.as_ref().unwrap()).to_string(),
+            get_percentage(torrent.percent_done.as_ref().unwrap().to_owned()),
+            convert_rate(*torrent.rate_download.as_ref().unwrap()),
+            convert_rate(*torrent.rate_upload.as_ref().unwrap()),
+            format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()),
+        ]));
     }
 
     let mut state = TableState::default();
     state.select(app.selected_torrent);
 
     let table = Table::new(rows)
+        .header(Row::new(vec![
+            "Name",
+            "Status",
+            "Progress",
+            "Down Speed",
+            "Up Speed",
+            "Ratio",
+        ]))
         .block(block.clone())
         .widths(&[
-            Constraint::Ratio(1, 2),
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 8),
+            Constraint::Ratio(1, 8),
+            Constraint::Ratio(1, 8),
+            Constraint::Ratio(1, 8),
+            Constraint::Ratio(1, 8),
         ])
         .highlight_style(Style::default().bg(Color::Red));
     f.render_stateful_widget(table, chunks[0], &mut state);
@@ -92,37 +102,58 @@ fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
         .split(area);
 
     let torrent = &app.torrents.arguments.torrents[app.selected_torrent.unwrap()];
-    // let thing = torrent.total_size.as_ref().cloned();
-    let size = torrent.total_size.as_ref().unwrap();
-    let size = convert_bytes(size.to_owned());
-    let percent = torrent.percent_done.as_ref().unwrap();
-    let percent = get_percentage(percent.to_owned());
 
     let info_block = Block::default().title("Information").borders(Borders::ALL);
     let info_rows = vec![
         Row::new(vec!["Name", torrent.name.as_ref().unwrap()]),
-        Row::new(vec!["Total size", size.as_str()]),
-        Row::new(vec!["Percent done", percent.as_str()]),
+        Row::new(vec![
+            "Total size".to_string(),
+            convert_bytes(*torrent.total_size.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Percent done".to_string(),
+            get_percentage(*torrent.percent_done.as_ref().unwrap()),
+        ]),
         Row::new(vec!["Path", torrent.download_dir.as_ref().unwrap()]),
-        Row::new(vec!["Magnet", torrent.hash_string.as_ref().unwrap()]),
     ];
 
     let info_table = Table::new(info_rows)
         .block(info_block)
         .widths(&[Constraint::Percentage(20), Constraint::Percentage(80)]);
-    let download_speed = torrent.rate_download.as_ref().unwrap();
-    let download_speed = convert_rate(download_speed.to_owned());
-
-    let upload_speed = torrent.rate_upload.as_ref().unwrap();
-    let upload_speed = convert_rate(upload_speed.to_owned());
 
     let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
     let transfer_rows = vec![
-        Row::new(vec!["Download speed", download_speed.as_str()]),
-        Row::new(vec!["Download limit", upload_speed.as_str()]),
-        // Row::new(vec!["Ratio", torrent.ratio]),
-        // Row::new(vec!["State", torrent.state]),
-        // Row::new(vec!["Peers", torrent.peers]),
+        Row::new(vec![
+            "Download speed".to_string(),
+            convert_rate(*torrent.rate_download.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Downloaded".to_string(),
+            convert_bytes(
+                *torrent.size_when_done.as_ref().unwrap()
+                    - *torrent.left_until_done.as_ref().unwrap(),
+            ),
+        ]),
+        Row::new(vec![
+            "Upload speed".to_string(),
+            convert_rate(*torrent.rate_upload.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Uploaded".to_string(),
+            convert_bytes(*torrent.uploaded_ever.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Ratio".to_string(),
+            format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Status",
+            status_string(torrent.status.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Eta".to_string(),
+            torrent.eta.as_ref().unwrap().to_string(),
+        ]),
     ];
 
     let transfer_table = Table::new(transfer_rows)
@@ -175,7 +206,8 @@ fn draw_help<B: Backend>(f: &mut Frame<B>) {
         Row::new(vec!["j / Down", "Move down"]),
         Row::new(vec!["k / Up", "Move up"]),
         Row::new(vec!["l", "Open torrent / Move right"]),
-        Row::new(vec!["h", "Go back / Move left"]),
+        Row::new(vec!["h", "Move left"]),
+        Row::new(vec!["Esc", "Go back"]),
         Row::new(vec!["q", "Exit"]),
     ];
     let table = Table::new(rows)
