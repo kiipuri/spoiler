@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::app::{get_all_torrents, App, FloatingWidget, FocusableWidget, Route, RouteId};
+use crate::app::{App, FloatingWidget, FocusableWidget, Route, RouteId};
 
 pub async fn handler(key: KeyCode, app: &mut App) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
@@ -78,7 +78,7 @@ fn handle_help(app: &mut App) {
 async fn handle_pause(app: &mut App) {
     match app.last_route_focused_widget() {
         Some(FocusableWidget::TorrentList) => {
-            app.pause_torrent().await;
+            app.toggle_torrent_pause().await;
         }
         _ => (),
     }

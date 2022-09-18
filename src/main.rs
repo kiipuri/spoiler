@@ -4,22 +4,21 @@ mod io_handler;
 mod key_handlers;
 mod ui;
 
-use app::{get_all_torrents_loop, App};
+use crate::ui::draw;
+use app::{get_all_torrents, App};
 use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen},
     ExecutableCommand,
 };
 use io_handler::{Events, InputEvent};
 use key_handlers::handler;
-use log::{error, LevelFilter};
+use log::LevelFilter;
 use std::{
     io::{self, Write},
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tui::{backend::CrosstermBackend, Terminal};
-
-use crate::ui::draw;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -32,14 +31,13 @@ async fn main() -> io::Result<()> {
     tokio::spawn(async move {
         loop {
             let app = app.clone();
-            get_all_torrents_loop(app).await;
+            get_all_torrents(&app).await;
+            drop(app);
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 
-    if let Err(_) = start_ui(&app_ui).await {
-        error!("ui loop errored!");
-    };
+    start_ui(&app_ui).await?;
     Ok(())
 }
 
@@ -59,15 +57,18 @@ async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
         })?;
 
         match events.next().await {
-            InputEvent::Input(key) => handler(key.code, &mut app),
+            InputEvent::Input(key) => handler(key.code, &mut app).await,
             InputEvent::Tick => (),
         }
 
         if app.should_quit {
+            events.close();
             break;
         }
 
-        drop(app)
+        drop(app);
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     terminal.clear()?;
