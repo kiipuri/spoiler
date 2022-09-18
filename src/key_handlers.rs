@@ -1,25 +1,39 @@
 use crossterm::event::KeyCode;
 
-use crate::app::{App, FloatingWidget, FocusableWidget, Route, RouteId};
+use crate::app::{App, FloatingWidget, FocusableWidget, InputMode, Route, RouteId};
 
 pub async fn handler(key: KeyCode, app: &mut App) {
-    if !matches!(app.floating_widget, FloatingWidget::None) {
-        if key == KeyCode::Esc {
-            handle_esc(app);
-        }
-        return;
-    }
+    // if !matches!(app.floating_widget, FloatingWidget::None) {
+    //     if key == KeyCode::Esc {
+    //         handle_esc(app);
+    //     }
+    //     return;
+    // }
 
-    match key {
-        KeyCode::Char('k') | KeyCode::Up => handle_up(app),
-        KeyCode::Char('j') | KeyCode::Down => handle_down(app),
-        KeyCode::Char('l') | KeyCode::Right => handle_right(app),
-        KeyCode::Char('h') | KeyCode::Left => handle_left(app),
-        KeyCode::Char('?') | KeyCode::F(1) => handle_help(app),
-        KeyCode::Char('p') => handle_pause(app).await,
-        KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Esc => handle_esc(app),
-        _ => (),
+    match app.input_mode {
+        InputMode::Normal => match key {
+            KeyCode::Char('k') | KeyCode::Up => handle_up(app),
+            KeyCode::Char('j') | KeyCode::Down => handle_down(app),
+            KeyCode::Char('l') | KeyCode::Right => handle_right(app),
+            KeyCode::Char('h') | KeyCode::Left => handle_left(app),
+            KeyCode::Char('?') | KeyCode::F(1) => handle_help(app),
+            KeyCode::Char('p') => handle_pause(app).await,
+            KeyCode::Char('r') => handle_rename(app).await,
+            KeyCode::Char('q') => app.should_quit = true,
+            KeyCode::Esc => handle_esc(app),
+            _ => (),
+        },
+        InputMode::Editing => match key {
+            KeyCode::Enter => {
+                app.rename_torrent().await;
+                app.input_mode = InputMode::Normal;
+                app.floating_widget = FloatingWidget::None
+            }
+            KeyCode::Char(c) => app.input.push(c),
+            KeyCode::Backspace => drop(app.input.pop()),
+            KeyCode::Esc => handle_esc(app),
+            _ => (),
+        },
     }
 }
 
@@ -84,6 +98,16 @@ async fn handle_pause(app: &mut App) {
     }
 }
 
+async fn handle_rename(app: &mut App) {
+    match app.last_route_focused_widget() {
+        Some(FocusableWidget::TorrentList) => {
+            app.floating_widget = FloatingWidget::Input;
+            app.input_mode = InputMode::Editing;
+        }
+        _ => (),
+    }
+}
+
 fn handle_esc(app: &mut App) {
     match app.last_route_focused_widget() {
         Some(FocusableWidget::Tabs) => {
@@ -99,4 +123,5 @@ fn handle_esc(app: &mut App) {
     }
 
     app.floating_widget = FloatingWidget::None;
+    app.input_mode = InputMode::Normal;
 }

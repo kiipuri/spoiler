@@ -7,10 +7,11 @@ use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Clear, Row, Table, TableState, Tabs},
+    widgets::{Block, Borders, Clear, Paragraph, Row, Table, TableState, Tabs},
     Frame,
 };
 use tui_logger::TuiLoggerWidget;
+use unicode_width::UnicodeWidthStr;
 
 use super::app::App;
 
@@ -23,6 +24,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     match app.floating_widget {
         FloatingWidget::Help => draw_help(f),
+        FloatingWidget::Input => draw_input(f, &app),
         _ => (),
     }
 }
@@ -207,6 +209,8 @@ fn draw_help<B: Backend>(f: &mut Frame<B>) {
         Row::new(vec!["k / Up", "Move up"]),
         Row::new(vec!["l", "Open torrent / Move right"]),
         Row::new(vec!["h", "Move left"]),
+        Row::new(vec!["p", "Pause/unpause torrent"]),
+        Row::new(vec!["r", "Rename torrent"]),
         Row::new(vec!["Esc", "Go back"]),
         Row::new(vec!["q", "Exit"]),
     ];
@@ -217,12 +221,26 @@ fn draw_help<B: Backend>(f: &mut Frame<B>) {
     f.render_widget(table, area);
 }
 
+fn draw_input<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = floating_rect(f);
+    let input = Paragraph::new(app.input.as_ref()).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Rename torrent"),
+    );
+
+    f.set_cursor(area.x + app.input.width() as u16 + 1, area.y + 1);
+    f.render_widget(Clear, area);
+    f.render_widget(input, area);
+}
+
 fn floating_rect<B: Backend>(f: &mut Frame<B>) -> Rect {
     let float_layout = Layout::default()
         .direction(tui::layout::Direction::Vertical)
         .constraints([
             Constraint::Percentage(25),
-            Constraint::Percentage(50),
+            Constraint::Length(3),
+            // Constraint::Percentage(50),
             Constraint::Percentage(25),
         ])
         .split(f.size());

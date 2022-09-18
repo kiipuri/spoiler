@@ -23,7 +23,13 @@ pub enum FocusableWidget {
 
 pub enum FloatingWidget {
     Help,
+    Input,
     None,
+}
+
+pub enum InputMode {
+    Normal,
+    Editing,
 }
 
 pub struct App {
@@ -36,6 +42,8 @@ pub struct App {
     pub should_quit: bool,
     pub sort_descending: bool,
     pub sort_column: u32,
+    pub input_mode: InputMode,
+    pub input: String,
 }
 
 impl App {
@@ -71,6 +79,8 @@ impl App {
             torrents,
             sort_descending: true,
             sort_column: 0,
+            input_mode: InputMode::Normal,
+            input: String::new(),
         }
     }
 
@@ -187,6 +197,31 @@ impl App {
             )
             .await
             .unwrap();
+    }
+
+    pub async fn rename_torrent(&mut self) {
+        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        client
+            .torrent_rename_path(
+                vec![Id::Id(self.get_selected_torrent_id())],
+                self.get_selected_torrent_name(),
+                self.input.to_owned(),
+            )
+            .await
+            .unwrap();
+    }
+
+    fn get_selected_torrent_id(&mut self) -> i64 {
+        self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+            .id
+            .unwrap()
+    }
+
+    fn get_selected_torrent_name(&mut self) -> String {
+        self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+            .name
+            .to_owned()
+            .unwrap()
     }
 }
 
