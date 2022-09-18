@@ -33,3 +33,16 @@ pub fn get_percentage(percent: f32) -> String {
     let percent = percent * 100f32;
     format!("{} %", percent)
 }
+
+pub fn status_string(id: &i64) -> &'static str {
+    match id {
+        0 => "Stopped",
+        1 => "Queued to verify local data",
+        2 => "Verifying local data",
+        3 => "Queued to download",
+        4 => "Downloading",
+        5 => "Queued to seed",
+        6 => "Seeding",
+        _ => "",
+    }
+}
