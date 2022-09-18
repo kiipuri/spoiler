@@ -1,13 +1,12 @@
 use crossterm::event::KeyCode;
 
-use crate::app::{App, FloatingWidget, FocusableWidget, Route, RouteId};
+use crate::app::{get_all_torrents, App, FloatingWidget, FocusableWidget, Route, RouteId};
 
-pub fn handler(key: KeyCode, app: &mut App) {
-    if key == KeyCode::Esc {
-        handle_esc(app);
-    }
-
+pub async fn handler(key: KeyCode, app: &mut App) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
+        if key == KeyCode::Esc {
+            handle_esc(app);
+        }
         return;
     }
 
@@ -17,7 +16,9 @@ pub fn handler(key: KeyCode, app: &mut App) {
         KeyCode::Char('l') | KeyCode::Right => handle_right(app),
         KeyCode::Char('h') | KeyCode::Left => handle_left(app),
         KeyCode::Char('?') | KeyCode::F(1) => handle_help(app),
-        // KeyCode::Esc => handle_esc(app),
+        KeyCode::Char('p') => handle_pause(app).await,
+        KeyCode::Char('q') => app.should_quit = true,
+        KeyCode::Esc => handle_esc(app),
         _ => (),
     }
 }
@@ -31,13 +32,12 @@ fn handle_up(app: &mut App) {
 }
 
 fn handle_down(app: &mut App) {
-    if !matches!(app.floating_widget, FloatingWidget::None) {
-        return;
-    }
-
     match app.last_route_focused_widget() {
         Some(FocusableWidget::TorrentList) => app.next(),
         Some(FocusableWidget::Tabs) => {
+            if app.selected_tab != 1 {
+                return;
+            }
             let index = app.navigation_stack.len() - 1;
             app.navigation_stack[index].focused_widget = FocusableWidget::FileList;
             app.selected_file = Some(0);
@@ -69,33 +69,33 @@ fn handle_left(app: &mut App) {
         }
         _ => (),
     }
-
-    match app.last_route_id() {
-        Some(RouteId::TorrentInfo) => {
-            // app.stack_pop();
-        }
-        _ => (),
-    }
 }
 
 fn handle_help(app: &mut App) {
     app.floating_widget = FloatingWidget::Help;
 }
 
-fn handle_esc(app: &mut App) {
-    if matches!(app.floating_widget, FloatingWidget::None) {
-        match app.last_route_focused_widget() {
-            Some(FocusableWidget::Tabs) => {
-                app.stack_pop();
-                return;
-            }
-            Some(FocusableWidget::FileList) => {
-                let index = app.navigation_stack.len() - 1;
-                app.navigation_stack[index].focused_widget = FocusableWidget::Tabs;
-                app.selected_file = None;
-            }
-            _ => (),
+async fn handle_pause(app: &mut App) {
+    match app.last_route_focused_widget() {
+        Some(FocusableWidget::TorrentList) => {
+            app.pause_torrent().await;
         }
+        _ => (),
+    }
+}
+
+fn handle_esc(app: &mut App) {
+    match app.last_route_focused_widget() {
+        Some(FocusableWidget::Tabs) => {
+            app.stack_pop();
+            return;
+        }
+        Some(FocusableWidget::FileList) => {
+            let index = app.navigation_stack.len() - 1;
+            app.navigation_stack[index].focused_widget = FocusableWidget::Tabs;
+            app.selected_file = None;
+        }
+        _ => (),
     }
 
     app.floating_widget = FloatingWidget::None;
