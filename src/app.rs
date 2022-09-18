@@ -1,7 +1,15 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use transmission_rpc::{
-    types::{Id, RpcResponse, SessionGet, Torrent, TorrentAction, TorrentGetField, Torrents},
+    types::{
+        Id, RpcResponse, SessionGet, Torrent, TorrentAction, TorrentAddArgs, TorrentGetField,
+        Torrents,
+    },
     TransClient,
 };
 
@@ -24,6 +32,8 @@ pub enum FocusableWidget {
 pub enum FloatingWidget {
     Help,
     Input,
+    AddTorrent,
+    AddTorrentConfirm,
     None,
 }
 
@@ -44,6 +54,9 @@ pub struct App {
     pub sort_column: u32,
     pub input_mode: InputMode,
     pub input: String,
+    pub torrent_files: Vec<PathBuf>,
+    pub selected_torrent_file: Option<usize>,
+    pub add_paused: bool,
 }
 
 impl App {
@@ -81,6 +94,9 @@ impl App {
             sort_column: 0,
             input_mode: InputMode::Normal,
             input: String::new(),
+            torrent_files: vec![],
+            selected_torrent_file: Some(0),
+            add_paused: false,
         }
     }
 
@@ -110,6 +126,19 @@ impl App {
             self.selected_torrent = Some(self.selected_torrent.unwrap() - 1);
         } else {
             self.selected_torrent = Some(self.torrents.arguments.torrents.len() - 1);
+        }
+    }
+
+    pub fn next_torrent_file(&mut self) {
+        self.selected_torrent_file =
+            Some((self.selected_torrent_file.unwrap() + 1) % self.torrent_files.len());
+    }
+
+    pub fn previous_torrent_file(&mut self) {
+        if self.selected_torrent_file > Some(0) {
+            self.selected_torrent_file = Some(self.selected_torrent_file.unwrap() - 1);
+        } else {
+            self.selected_torrent_file = Some(self.torrent_files.len() - 1);
         }
     }
 
@@ -209,6 +238,42 @@ impl App {
             )
             .await
             .unwrap();
+    }
+
+    pub async fn add_torrent(&mut self, paused: bool) {
+        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let add: TorrentAddArgs = TorrentAddArgs {
+            filename: Some(
+                self.torrent_files[self.selected_torrent_file.unwrap()]
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            ),
+            paused: Some(paused),
+            ..TorrentAddArgs::default()
+        };
+        client.torrent_add(add).await.unwrap();
+    }
+
+    pub fn get_torrent_files(&mut self) {
+        self.torrent_files.clear();
+
+        match fs::read_dir("/home/kiipuri/Downloads") {
+            Err(e) => log::error!("{}", e),
+            Ok(paths) => {
+                for path in paths {
+                    let path = path.unwrap().path();
+                    let file = Path::new(&path);
+                    if file.extension().and_then(OsStr::to_str) == Some("torrent") {
+                        self.torrent_files.push(file.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn toggle_add_torrent_paused(&mut self) {
+        self.add_paused = !self.add_paused;
     }
 
     fn get_selected_torrent_id(&mut self) -> i64 {

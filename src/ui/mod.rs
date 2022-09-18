@@ -4,10 +4,12 @@ use crate::{
 };
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, Clear, Paragraph, Row, Table, TableState, Tabs},
+    layout::{Constraint, Direction, Layout, Margin, Rect},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans, Text},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table, TableState, Tabs,
+    },
     Frame,
 };
 use tui_logger::TuiLoggerWidget;
@@ -25,6 +27,8 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     match app.floating_widget {
         FloatingWidget::Help => draw_help(f),
         FloatingWidget::Input => draw_input(f, &app),
+        FloatingWidget::AddTorrent => draw_add_torrent(f, &app),
+        FloatingWidget::AddTorrentConfirm => draw_add_torrent_confirm(f, &app),
         _ => (),
     }
 }
@@ -203,7 +207,7 @@ fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) 
 
 fn draw_help<B: Backend>(f: &mut Frame<B>) {
     let block = Block::default().title("Help").borders(Borders::ALL);
-    let area = floating_rect(f);
+    let area = floating_rect(f, 10);
     let rows = vec![
         Row::new(vec!["j / Down", "Move down"]),
         Row::new(vec!["k / Up", "Move up"]),
@@ -222,7 +226,7 @@ fn draw_help<B: Backend>(f: &mut Frame<B>) {
 }
 
 fn draw_input<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let area = floating_rect(f);
+    let area = floating_rect(f, 3);
     let input = Paragraph::new(app.input.as_ref()).block(
         Block::default()
             .borders(Borders::ALL)
@@ -234,14 +238,84 @@ fn draw_input<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(input, area);
 }
 
-fn floating_rect<B: Backend>(f: &mut Frame<B>) -> Rect {
+fn draw_add_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = floating_rect(f, app.torrent_files.len() as u32 + 2);
+    let mut rows = Vec::new();
+    for file in &app.torrent_files {
+        rows.push(ListItem::new(file.to_str().unwrap()));
+    }
+    let list = List::new(rows)
+        .block(Block::default().borders(Borders::ALL).title("Add torrent"))
+        .highlight_style(Style::default().bg(Color::Red));
+
+    let mut state = ListState::default();
+    state.select(app.selected_torrent_file);
+
+    f.render_widget(Clear, area);
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_add_torrent_confirm<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let torrent = lava_torrent::torrent::v1::Torrent::read_from_file(
+        app.torrent_files[app.selected_torrent_file.unwrap()].as_path(),
+    )
+    .unwrap();
+
+    let text = Text::from(Spans::from(vec![
+        Span::raw("Press "),
+        Span::styled("P", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" to toggle paused, "),
+        Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" to add torrent"),
+    ]));
+
+    let area = floating_rect(f, 9);
+    let chunks = Layout::default()
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .margin(1)
+        .split(area);
+    let rows = vec![
+        Row::new(vec![
+            "Filename",
+            app.torrent_files[app.selected_torrent_file.unwrap()]
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        ]),
+        Row::new(vec!["Torrent name".to_string(), torrent.name.to_string()]),
+        Row::new(vec!["Size".to_string(), convert_bytes(torrent.length)]),
+        Row::new(vec![
+            "Info hash".to_string(),
+            torrent.info_hash().to_string(),
+        ]),
+        Row::new(vec!["Start paused".to_string(), app.add_paused.to_string()]),
+    ];
+    let table = Table::new(rows).widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
+    let block = Block::default().borders(Borders::ALL).title("Add torrent");
+
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(text).alignment(tui::layout::Alignment::Center),
+        chunks[0],
+    );
+    f.render_widget(table, chunks[1]);
+    f.render_widget(block, area);
+}
+
+fn floating_rect<B: Backend>(f: &mut Frame<B>, height: u32) -> Rect {
     let float_layout = Layout::default()
         .direction(tui::layout::Direction::Vertical)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Length(3),
-            // Constraint::Percentage(50),
-            Constraint::Percentage(25),
+            Constraint::Percentage(
+                ((100 as f32 - height as f32 / f.size().height as f32 * 100 as f32) / 2 as f32)
+                    .round() as u16,
+            ),
+            Constraint::Length(height as u16),
+            Constraint::Percentage(
+                ((100 as f32 - height as f32 / f.size().height as f32 * 100 as f32) / 2 as f32)
+                    .round() as u16,
+            ),
         ])
         .split(f.size());
 
