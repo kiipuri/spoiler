@@ -21,6 +21,8 @@ pub async fn handler(key: KeyCode, app: &mut App) {
             KeyCode::Char('r') => handle_rename(app).await,
             KeyCode::Char('a') => handle_add(app).await,
             KeyCode::Char('q') => app.should_quit = true,
+            KeyCode::Char('d') => handle_remove(app).await,
+            KeyCode::Char('t') => handle_toggle(app),
             KeyCode::Enter => handle_enter(app).await,
             KeyCode::Esc => handle_esc(app),
             _ => (),
@@ -99,7 +101,6 @@ fn handle_right(app: &mut App) {
             });
         }
         Some(FocusableWidget::Tabs) => app.next_tab(),
-        // Some(FocusableWidget::FileList) => app.increment_priority(),
         _ => (),
     }
 }
@@ -170,9 +171,38 @@ async fn handle_add(app: &mut App) {
     }
 }
 
+async fn handle_remove(app: &mut App) {
+    if !matches!(app.floating_widget, FloatingWidget::None) {
+        return;
+    }
+
+    match app.last_route_focused_widget() {
+        Some(FocusableWidget::TorrentList) => {
+            app.floating_widget = FloatingWidget::RemoveTorrent;
+        }
+        _ => (),
+    }
+}
+
+fn handle_toggle(app: &mut App) {
+    match app.floating_widget {
+        FloatingWidget::RemoveTorrent => {
+            app.delete_files = !app.delete_files;
+        }
+        _ => (),
+    }
+}
+
 async fn handle_enter(app: &mut App) {
     match app.floating_widget {
-        FloatingWidget::AddTorrentConfirm => app.add_torrent(true).await,
+        FloatingWidget::AddTorrentConfirm => {
+            app.add_torrent().await;
+            app.floating_widget = FloatingWidget::None;
+        }
+        FloatingWidget::RemoveTorrent => {
+            app.remove_torrent().await;
+            app.floating_widget = FloatingWidget::None;
+        }
         _ => (),
     }
 }

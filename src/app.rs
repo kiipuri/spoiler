@@ -34,6 +34,7 @@ pub enum FloatingWidget {
     Input,
     AddTorrent,
     AddTorrentConfirm,
+    RemoveTorrent,
     None,
 }
 
@@ -57,6 +58,7 @@ pub struct App {
     pub torrent_files: Vec<PathBuf>,
     pub selected_torrent_file: Option<usize>,
     pub add_paused: bool,
+    pub delete_files: bool,
 }
 
 impl App {
@@ -97,6 +99,7 @@ impl App {
             torrent_files: vec![],
             selected_torrent_file: Some(0),
             add_paused: false,
+            delete_files: false,
         }
     }
 
@@ -240,7 +243,7 @@ impl App {
             .unwrap();
     }
 
-    pub async fn add_torrent(&mut self, paused: bool) {
+    pub async fn add_torrent(&mut self) {
         let client = TransClient::new("http://localhost:9091/transmission/rpc");
         let add: TorrentAddArgs = TorrentAddArgs {
             filename: Some(
@@ -249,10 +252,21 @@ impl App {
                     .unwrap()
                     .to_owned(),
             ),
-            paused: Some(paused),
+            paused: Some(self.add_paused),
             ..TorrentAddArgs::default()
         };
         client.torrent_add(add).await.unwrap();
+    }
+
+    pub async fn remove_torrent(&mut self) {
+        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        client
+            .torrent_remove(
+                vec![Id::Id(self.get_selected_torrent_id())],
+                self.delete_files,
+            )
+            .await
+            .unwrap();
     }
 
     pub fn get_torrent_files(&mut self) {
@@ -276,13 +290,13 @@ impl App {
         self.add_paused = !self.add_paused;
     }
 
-    fn get_selected_torrent_id(&mut self) -> i64 {
+    fn get_selected_torrent_id(&self) -> i64 {
         self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
             .id
             .unwrap()
     }
 
-    fn get_selected_torrent_name(&mut self) -> String {
+    pub fn get_selected_torrent_name(&self) -> String {
         self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
             .name
             .to_owned()

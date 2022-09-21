@@ -4,7 +4,7 @@ use crate::{
 };
 use tui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Margin, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
     widgets::{
@@ -29,6 +29,7 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         FloatingWidget::Input => draw_input(f, &app),
         FloatingWidget::AddTorrent => draw_add_torrent(f, &app),
         FloatingWidget::AddTorrentConfirm => draw_add_torrent_confirm(f, &app),
+        FloatingWidget::RemoveTorrent => draw_remove_torrent(f, &app),
         _ => (),
     }
 }
@@ -207,7 +208,7 @@ fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) 
 
 fn draw_help<B: Backend>(f: &mut Frame<B>) {
     let block = Block::default().title("Help").borders(Borders::ALL);
-    let area = floating_rect(f, 10);
+    let area = floating_rect(f, 50, 15);
     let rows = vec![
         Row::new(vec!["j / Down", "Move down"]),
         Row::new(vec!["k / Up", "Move up"]),
@@ -215,18 +216,21 @@ fn draw_help<B: Backend>(f: &mut Frame<B>) {
         Row::new(vec!["h", "Move left"]),
         Row::new(vec!["p", "Pause/unpause torrent"]),
         Row::new(vec!["r", "Rename torrent"]),
+        Row::new(vec!["d", "Delete torrent"]),
+        Row::new(vec!["t", "Toggle torrent files deletion"]),
+        Row::new(vec!["Enter", "Confirm"]),
         Row::new(vec!["Esc", "Go back"]),
         Row::new(vec!["q", "Exit"]),
     ];
     let table = Table::new(rows)
         .block(block)
-        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)]);
+        .widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
     f.render_widget(Clear, area);
     f.render_widget(table, area);
 }
 
 fn draw_input<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let area = floating_rect(f, 3);
+    let area = floating_rect(f, 100, 3);
     let input = Paragraph::new(app.input.as_ref()).block(
         Block::default()
             .borders(Borders::ALL)
@@ -239,7 +243,7 @@ fn draw_input<B: Backend>(f: &mut Frame<B>, app: &App) {
 }
 
 fn draw_add_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let area = floating_rect(f, app.torrent_files.len() as u32 + 2);
+    let area = floating_rect(f, 100, app.torrent_files.len() as u32 + 2);
     let mut rows = Vec::new();
     for file in &app.torrent_files {
         rows.push(ListItem::new(file.to_str().unwrap()));
@@ -269,7 +273,7 @@ fn draw_add_torrent_confirm<B: Backend>(f: &mut Frame<B>, app: &App) {
         Span::raw(" to add torrent"),
     ]));
 
-    let area = floating_rect(f, 9);
+    let area = floating_rect(f, 100, 9);
     let chunks = Layout::default()
         .constraints([Constraint::Length(2), Constraint::Min(1)])
         .margin(1)
@@ -303,18 +307,55 @@ fn draw_add_torrent_confirm<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(block, area);
 }
 
-fn floating_rect<B: Backend>(f: &mut Frame<B>, height: u32) -> Rect {
+fn draw_remove_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = floating_rect(f, 45, 6);
+    let mut text = Text::from(Spans::from(vec![
+        Span::from("Delete "),
+        Span::styled(
+            app.get_selected_torrent_name(),
+            Style::default().add_modifier(Modifier::ITALIC),
+        ),
+        Span::from("?"),
+    ]));
+
+    if app.delete_files {
+        text.extend(Text::from(Spans::from(vec![Span::styled(
+            "Delete files on disk",
+            Style::default().add_modifier(Modifier::UNDERLINED),
+        )])));
+    } else {
+        text.extend(Text::from(Spans::from(vec![Span::styled(
+            "Delete torrent only",
+            Style::default().add_modifier(Modifier::UNDERLINED),
+        )])));
+    }
+
+    text.extend(Text::raw("\nPress T to toggle deletion"));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Remove torrent");
+
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(text)
+            .block(block)
+            .alignment(tui::layout::Alignment::Center),
+        area,
+    );
+}
+
+fn floating_rect<B: Backend>(f: &mut Frame<B>, width: u32, height: u32) -> Rect {
     let float_layout = Layout::default()
-        .direction(tui::layout::Direction::Vertical)
+        .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage(
                 ((100 as f32 - height as f32 / f.size().height as f32 * 100 as f32) / 2 as f32)
-                    .round() as u16,
+                    .ceil() as u16,
             ),
             Constraint::Length(height as u16),
             Constraint::Percentage(
                 ((100 as f32 - height as f32 / f.size().height as f32 * 100 as f32) / 2 as f32)
-                    .round() as u16,
+                    .ceil() as u16,
             ),
         ])
         .split(f.size());
@@ -322,9 +363,15 @@ fn floating_rect<B: Backend>(f: &mut Frame<B>, height: u32) -> Rect {
     Layout::default()
         .direction(tui::layout::Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(50),
-            Constraint::Percentage(25),
+            Constraint::Percentage(
+                ((100 as f32 - width as f32 / f.size().width as f32 * 100 as f32) / 2 as f32)
+                    .round() as u16,
+            ),
+            Constraint::Length(width as u16),
+            Constraint::Percentage(
+                ((100 as f32 - width as f32 / f.size().width as f32 * 100 as f32) / 2 as f32)
+                    .round() as u16,
+            ),
         ])
         .split(float_layout[1])[1]
 }
