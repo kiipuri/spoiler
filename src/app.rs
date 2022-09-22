@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use transmission_rpc::{
     types::{
         Id, RpcResponse, SessionGet, Torrent, TorrentAction, TorrentAddArgs, TorrentGetField,
@@ -12,6 +13,9 @@ use transmission_rpc::{
     },
     TransClient,
 };
+use tui::widgets::Row;
+
+use crate::conversion::{convert_rate, get_percentage, status_string};
 
 pub enum RouteId {
     TorrentList,
@@ -35,12 +39,49 @@ pub enum FloatingWidget {
     AddTorrent,
     AddTorrentConfirm,
     RemoveTorrent,
+    ModifyColumns,
     None,
 }
 
 pub enum InputMode {
     Normal,
     Editing,
+}
+
+pub enum ColumnField {
+    Name,
+    Status,
+    Id,
+    Progress,
+    Eta,
+    DownloadRate,
+    UploadRate,
+    UploadRatio,
+    DoneDate,
+    AddedDate,
+}
+
+impl ColumnField {
+    pub fn to_str(&self) -> String {
+        match self {
+            ColumnField::Name => "Name",
+            ColumnField::Status => "Status",
+            ColumnField::Id => "Id",
+            ColumnField::Progress => "Progress",
+            ColumnField::Eta => "Eta",
+            ColumnField::DownloadRate => "Down Speed",
+            ColumnField::UploadRate => "Up Speed",
+            ColumnField::UploadRatio => "Ratio",
+            ColumnField::DoneDate => "Date Done",
+            ColumnField::AddedDate => "Date Added",
+        }
+        .to_string()
+    }
+}
+
+pub struct ColumnAndShow {
+    pub column: ColumnField,
+    pub show: bool,
 }
 
 pub struct App {
@@ -59,6 +100,8 @@ pub struct App {
     pub selected_torrent_file: Option<usize>,
     pub add_paused: bool,
     pub delete_files: bool,
+    pub all_info_columns: Vec<ColumnAndShow>,
+    pub selected_column: Option<usize>,
 }
 
 impl App {
@@ -100,6 +143,49 @@ impl App {
             selected_torrent_file: Some(0),
             add_paused: false,
             delete_files: false,
+            all_info_columns: vec![
+                ColumnAndShow {
+                    column: ColumnField::Name,
+                    show: true,
+                },
+                ColumnAndShow {
+                    column: ColumnField::Status,
+                    show: true,
+                },
+                ColumnAndShow {
+                    column: ColumnField::Progress,
+                    show: true,
+                },
+                ColumnAndShow {
+                    column: ColumnField::DownloadRate,
+                    show: true,
+                },
+                ColumnAndShow {
+                    column: ColumnField::UploadRate,
+                    show: true,
+                },
+                ColumnAndShow {
+                    column: ColumnField::UploadRatio,
+                    show: true,
+                },
+                ColumnAndShow {
+                    column: ColumnField::Eta,
+                    show: false,
+                },
+                ColumnAndShow {
+                    column: ColumnField::DoneDate,
+                    show: false,
+                },
+                ColumnAndShow {
+                    column: ColumnField::AddedDate,
+                    show: false,
+                },
+                ColumnAndShow {
+                    column: ColumnField::Id,
+                    show: false,
+                },
+            ],
+            selected_column: Some(0),
         }
     }
 
@@ -129,6 +215,36 @@ impl App {
             self.selected_torrent = Some(self.selected_torrent.unwrap() - 1);
         } else {
             self.selected_torrent = Some(self.torrents.arguments.torrents.len() - 1);
+        }
+    }
+
+    pub fn next_column(&mut self) {
+        self.selected_column = Some((self.selected_column.unwrap() + 1) % 10);
+    }
+
+    pub fn previous_column(&mut self) {
+        if self.selected_column > Some(0) {
+            self.selected_column = Some(self.selected_column.unwrap() - 1);
+        } else {
+            self.selected_column = Some(9);
+        }
+    }
+
+    pub fn move_column_down(&mut self) {
+        self.all_info_columns.swap(
+            self.selected_column.unwrap(),
+            (self.selected_column.unwrap() + 1) % 10,
+        );
+    }
+
+    pub fn move_column_up(&mut self) {
+        if self.selected_column == Some(0) {
+            self.all_info_columns.swap(self.selected_column.unwrap(), 9);
+        } else {
+            self.all_info_columns.swap(
+                self.selected_column.unwrap() - 1,
+                self.selected_column.unwrap(),
+            );
         }
     }
 
@@ -191,12 +307,12 @@ impl App {
         }
     }
 
-    pub async fn increment_priority(&mut self) {
-        self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-            .priorities
-            .as_mut()
-            .unwrap()[self.selected_file.unwrap()] = 1i8;
-    }
+    // pub async fn increment_priority(&mut self) {
+    //     self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+    //         .priorities
+    //         .as_mut()
+    //         .unwrap()[self.selected_file.unwrap()] = 1i8;
+    // }
 
     pub async fn toggle_torrent_pause(&mut self) {
         let client = TransClient::new("http://localhost:9091/transmission/rpc");
@@ -229,6 +345,74 @@ impl App {
             )
             .await
             .unwrap();
+    }
+
+    pub fn get_torrent_rows(&self) -> (Vec<String>, Vec<Row>) {
+        let mut rows = Vec::new();
+        for torrent in &self.torrents.arguments.torrents {
+            let mut row_strs = Vec::new();
+            for field in &self.all_info_columns {
+                if !field.show {
+                    continue;
+                }
+
+                match field.column {
+                    ColumnField::Name => {
+                        row_strs.push(torrent.name.as_ref().unwrap().to_owned());
+                    }
+                    ColumnField::Id => {
+                        row_strs.push(torrent.id.unwrap().to_string());
+                    }
+                    ColumnField::Eta => {
+                        row_strs.push(torrent.eta.unwrap().to_string());
+                    }
+                    ColumnField::Status => {
+                        row_strs.push(status_string(&torrent.status.as_ref().unwrap()).to_string());
+                    }
+                    ColumnField::Progress => {
+                        row_strs.push(get_percentage(
+                            torrent.percent_done.as_ref().unwrap().to_owned(),
+                        ));
+                    }
+                    ColumnField::DownloadRate => {
+                        row_strs.push(convert_rate(*torrent.rate_download.as_ref().unwrap()));
+                    }
+                    ColumnField::UploadRate => {
+                        row_strs.push(convert_rate(*torrent.rate_upload.as_ref().unwrap()));
+                    }
+                    ColumnField::UploadRatio => {
+                        row_strs.push(format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()));
+                    }
+                    ColumnField::DoneDate => {
+                        let naive = NaiveDateTime::from_timestamp(torrent.done_date.unwrap(), 0);
+                        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+                        let newdate = datetime.format("%H:%M %d/%m/%Y");
+                        row_strs.push(newdate.to_string());
+                    }
+                    ColumnField::AddedDate => {
+                        let naive = NaiveDateTime::from_timestamp(torrent.added_date.unwrap(), 0);
+                        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+                        let newdate = datetime.format("%H:%M %d/%m/%Y");
+                        row_strs.push(newdate.to_string());
+                    }
+                }
+            }
+            rows.push(Row::new(row_strs));
+        }
+        let mut header_rows = Vec::new();
+        for field in &self.all_info_columns {
+            if !field.show {
+                continue;
+            }
+            header_rows.push(field.column.to_str());
+        }
+
+        (header_rows, rows)
+    }
+
+    pub fn toggle_show_column(&mut self) {
+        self.all_info_columns[self.selected_column.unwrap()].show =
+            !self.all_info_columns[self.selected_column.unwrap()].show;
     }
 
     pub async fn rename_torrent(&mut self) {

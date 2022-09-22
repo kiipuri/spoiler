@@ -29,7 +29,8 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
         FloatingWidget::Input => draw_input(f, &app),
         FloatingWidget::AddTorrent => draw_add_torrent(f, &app),
         FloatingWidget::AddTorrentConfirm => draw_add_torrent_confirm(f, &app),
-        FloatingWidget::RemoveTorrent => draw_remove_torrent(f, &app),
+        FloatingWidget::RemoveTorrent => draw_delete_torrent(f, &app),
+        FloatingWidget::ModifyColumns => draw_modify_columns(f, &app),
         _ => (),
     }
 }
@@ -41,40 +42,28 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
         .split(f.size());
 
     let block = Block::default().title("Torrents").borders(Borders::ALL);
-    let mut rows = vec![];
-
-    for torrent in &app.torrents.arguments.torrents {
-        rows.push(Row::new(vec![
-            torrent.name.as_ref().unwrap().to_owned(),
-            status_string(&torrent.status.as_ref().unwrap()).to_string(),
-            get_percentage(torrent.percent_done.as_ref().unwrap().to_owned()),
-            convert_rate(*torrent.rate_download.as_ref().unwrap()),
-            convert_rate(*torrent.rate_upload.as_ref().unwrap()),
-            format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()),
-        ]));
-    }
+    let (header_rows, rows) = app.get_torrent_rows();
 
     let mut state = TableState::default();
     state.select(app.selected_torrent);
 
+    let mut columns_count = 0;
+    let mut widths = Vec::new();
+
+    for column in &app.all_info_columns {
+        if column.show {
+            columns_count += 1;
+        }
+    }
+
+    for _ in 0..columns_count {
+        widths.push(Constraint::Ratio(1, columns_count));
+    }
+
     let table = Table::new(rows)
-        .header(Row::new(vec![
-            "Name",
-            "Status",
-            "Progress",
-            "Down Speed",
-            "Up Speed",
-            "Ratio",
-        ]))
+        .header(Row::new(header_rows))
         .block(block.clone())
-        .widths(&[
-            Constraint::Ratio(1, 3),
-            Constraint::Ratio(1, 8),
-            Constraint::Ratio(1, 8),
-            Constraint::Ratio(1, 8),
-            Constraint::Ratio(1, 8),
-            Constraint::Ratio(1, 8),
-        ])
+        .widths(&widths)
         .highlight_style(Style::default().bg(Color::Red));
     f.render_stateful_widget(table, chunks[0], &mut state);
 
@@ -307,7 +296,7 @@ fn draw_add_torrent_confirm<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(block, area);
 }
 
-fn draw_remove_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn draw_delete_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
     let area = floating_rect(f, 45, 6);
     let mut text = Text::from(Spans::from(vec![
         Span::from("Delete "),
@@ -333,7 +322,7 @@ fn draw_remove_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
     text.extend(Text::raw("\nPress T to toggle deletion"));
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Remove torrent");
+        .title("Delete torrent");
 
     f.render_widget(Clear, area);
     f.render_widget(
@@ -342,6 +331,29 @@ fn draw_remove_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
             .alignment(tui::layout::Alignment::Center),
         area,
     );
+}
+
+fn draw_modify_columns<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let area = floating_rect(f, 100, 20);
+    let mut items = Vec::new();
+
+    for column in &app.all_info_columns {
+        let list_item = ListItem::new(column.column.to_str());
+        if column.show {
+            items.push(list_item.style(Style::default().bg(Color::Green).fg(Color::Black)));
+        } else {
+            items.push(list_item.style(Style::default().bg(Color::Blue).fg(Color::Black)));
+        }
+    }
+
+    let list = List::new(items).highlight_style(Style::default().bg(Color::Red));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Modify columns");
+    let mut state = ListState::default();
+    state.select(app.selected_column);
+    f.render_widget(Clear, area);
+    f.render_stateful_widget(list.block(block), area, &mut state);
 }
 
 fn floating_rect<B: Backend>(f: &mut Frame<B>, width: u32, height: u32) -> Rect {

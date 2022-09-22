@@ -1,8 +1,8 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, FloatingWidget, FocusableWidget, InputMode, Route, RouteId};
 
-pub async fn handler(key: KeyCode, app: &mut App) {
+pub async fn handler(key: KeyEvent, app: &mut App) {
     // if !matches!(app.floating_widget, FloatingWidget::None) {
     //     if key == KeyCode::Esc {
     //         handle_esc(app);
@@ -11,9 +11,9 @@ pub async fn handler(key: KeyCode, app: &mut App) {
     // }
 
     match app.input_mode {
-        InputMode::Normal => match key {
-            KeyCode::Char('k') | KeyCode::Up => handle_up(app),
-            KeyCode::Char('j') | KeyCode::Down => handle_down(app),
+        InputMode::Normal => match key.code {
+            KeyCode::Char('K') | KeyCode::Char('k') | KeyCode::Up => handle_up(key, app),
+            KeyCode::Char('J') | KeyCode::Char('j') | KeyCode::Down => handle_down(key, app),
             KeyCode::Char('l') | KeyCode::Right => handle_right(app),
             KeyCode::Char('h') | KeyCode::Left => handle_left(app),
             KeyCode::Char('?') | KeyCode::F(1) => handle_help(app),
@@ -23,11 +23,12 @@ pub async fn handler(key: KeyCode, app: &mut App) {
             KeyCode::Char('q') => app.should_quit = true,
             KeyCode::Char('d') => handle_remove(app).await,
             KeyCode::Char('t') => handle_toggle(app),
+            KeyCode::Char('c') => handle_columns(app),
             KeyCode::Enter => handle_enter(app).await,
             KeyCode::Esc => handle_esc(app),
             _ => (),
         },
-        InputMode::Editing => match key {
+        InputMode::Editing => match key.code {
             KeyCode::Enter => {
                 app.rename_torrent().await;
                 app.input_mode = InputMode::Normal;
@@ -41,13 +42,24 @@ pub async fn handler(key: KeyCode, app: &mut App) {
     }
 }
 
-fn handle_up(app: &mut App) {
+fn handle_up(key: KeyEvent, app: &mut App) {
     match app.floating_widget {
         FloatingWidget::AddTorrent => {
             app.previous_torrent_file();
             return;
         }
         FloatingWidget::AddTorrentConfirm => return,
+        FloatingWidget::ModifyColumns => match key.modifiers {
+            KeyModifiers::SHIFT => {
+                app.move_column_up();
+                app.previous_column();
+                return;
+            }
+            _ => {
+                app.previous_column();
+                return;
+            }
+        },
         _ => (),
     }
 
@@ -58,13 +70,24 @@ fn handle_up(app: &mut App) {
     }
 }
 
-fn handle_down(app: &mut App) {
+fn handle_down(key: KeyEvent, app: &mut App) {
     match app.floating_widget {
         FloatingWidget::AddTorrent => {
             app.next_torrent_file();
             return;
         }
         FloatingWidget::AddTorrentConfirm => return,
+        FloatingWidget::ModifyColumns => match key.modifiers {
+            KeyModifiers::SHIFT => {
+                app.move_column_down();
+                app.next_column();
+                return;
+            }
+            _ => {
+                app.next_column();
+                return;
+            }
+        },
         _ => (),
     }
 
@@ -193,6 +216,14 @@ fn handle_toggle(app: &mut App) {
     }
 }
 
+fn handle_columns(app: &mut App) {
+    if !matches!(app.floating_widget, FloatingWidget::None) {
+        return;
+    }
+
+    app.floating_widget = FloatingWidget::ModifyColumns;
+}
+
 async fn handle_enter(app: &mut App) {
     match app.floating_widget {
         FloatingWidget::AddTorrentConfirm => {
@@ -202,6 +233,9 @@ async fn handle_enter(app: &mut App) {
         FloatingWidget::RemoveTorrent => {
             app.remove_torrent().await;
             app.floating_widget = FloatingWidget::None;
+        }
+        FloatingWidget::ModifyColumns => {
+            app.toggle_show_column();
         }
         _ => (),
     }

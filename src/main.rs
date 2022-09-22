@@ -57,7 +57,7 @@ async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
         })?;
 
         match events.next().await {
-            InputEvent::Input(key) => handler(key.code, &mut app).await,
+            InputEvent::Input(key) => handler(key, &mut app).await,
             InputEvent::Tick => (),
         }
 
