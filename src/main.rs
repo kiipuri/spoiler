@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod conversion;
 mod io_handler;
 mod key_handlers;
@@ -49,26 +50,32 @@ async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
     let mut events = Events::new(tick_rate).await;
 
     loop {
-        let app = app.clone();
-        let mut app = app.lock().unwrap();
+        let app_mutex = app.clone();
+        {
+            let mut app = app_mutex.lock().unwrap();
 
-        terminal.draw(|f| {
-            draw(f, &app);
-        })?;
+            terminal.draw(|f| {
+                draw(f, &mut app);
+            })?;
+        }
 
         match events.next().await {
-            InputEvent::Input(key) => handler(key, &mut app).await,
+            InputEvent::Input(key) => {
+                let mut app = app_mutex.lock().unwrap();
+                handler(key, &mut app).await;
+            }
             InputEvent::Tick => (),
         }
 
-        if app.should_quit {
-            events.close();
-            break;
+        {
+            let app = app_mutex.lock().unwrap();
+
+            if app.should_quit {
+                events.close();
+                break;
+            }
         }
-
-        drop(app);
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        // tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     terminal.clear()?;

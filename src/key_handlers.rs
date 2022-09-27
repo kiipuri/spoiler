@@ -35,7 +35,9 @@ pub async fn handler(key: KeyEvent, app: &mut App) {
                 app.floating_widget = FloatingWidget::None
             }
             KeyCode::Char(c) => app.input.push(c),
-            KeyCode::Backspace => drop(app.input.pop()),
+            KeyCode::Backspace => {
+                app.input.pop();
+            }
             KeyCode::Esc => handle_esc(app),
             _ => (),
         },
@@ -48,7 +50,7 @@ fn handle_up(key: KeyEvent, app: &mut App) {
             app.previous_torrent_file();
             return;
         }
-        FloatingWidget::AddTorrentConfirm => return,
+        FloatingWidget::AddTorrentConfirm | FloatingWidget::Help => return,
         FloatingWidget::ModifyColumns => match key.modifiers {
             KeyModifiers::SHIFT => {
                 app.move_column_up();
@@ -76,7 +78,7 @@ fn handle_down(key: KeyEvent, app: &mut App) {
             app.next_torrent_file();
             return;
         }
-        FloatingWidget::AddTorrentConfirm => return,
+        FloatingWidget::AddTorrentConfirm | FloatingWidget::Help => return,
         FloatingWidget::ModifyColumns => match key.modifiers {
             KeyModifiers::SHIFT => {
                 app.move_column_down();
@@ -129,18 +131,13 @@ fn handle_right(app: &mut App) {
 }
 
 fn handle_left(app: &mut App) {
-    match app.floating_widget {
-        FloatingWidget::AddTorrentConfirm => {
-            app.floating_widget = FloatingWidget::AddTorrent;
-            return;
-        }
-        _ => (),
+    if let FloatingWidget::AddTorrentConfirm = app.floating_widget {
+        app.floating_widget = FloatingWidget::AddTorrent;
     }
 
     match app.last_route_focused_widget() {
         Some(FocusableWidget::Tabs) => {
             app.previous_tab();
-            return;
         }
         _ => (),
     }
@@ -236,6 +233,17 @@ async fn handle_enter(app: &mut App) {
         }
         FloatingWidget::ModifyColumns => {
             app.toggle_show_column();
+        }
+        _ => (),
+    }
+
+    match app.last_route_focused_widget() {
+        Some(FocusableWidget::FileList) => {
+            app.torrent_collapse_files[app.selected_torrent_file.unwrap()].collapse =
+                !app.torrent_collapse_files[app.selected_torrent_file.unwrap()].collapse;
+            for file in &app.torrent_collapse_files {
+                log::error!("{} | {}", file.collapse, file.path.path().to_str().unwrap());
+            }
         }
         _ => (),
     }
