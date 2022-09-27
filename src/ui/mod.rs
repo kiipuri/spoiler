@@ -1,6 +1,6 @@
 use crate::{
     app::{FloatingWidget, RouteId},
-    conversion::{convert_bytes, convert_rate, get_percentage, status_string},
+    conversion::{convert_bytes, convert_rate, convert_secs, date, get_percentage, status_string},
 };
 use tui::{
     backend::Backend,
@@ -13,11 +13,12 @@ use tui::{
     Frame,
 };
 use tui_logger::TuiLoggerWidget;
+use tui_tree_widget::{Tree, TreeItem, TreeState};
 use unicode_width::UnicodeWidthStr;
 
 use super::app::App;
 
-pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
+pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     match app.last_route_id() {
         Some(RouteId::TorrentList) => draw_torrent_list(f, app),
         Some(RouteId::TorrentInfo) => draw_torrent_info(f, app),
@@ -25,21 +26,26 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &App) {
     }
 
     match app.floating_widget {
-        FloatingWidget::Help => draw_help(f),
-        FloatingWidget::Input => draw_input(f, &app),
-        FloatingWidget::AddTorrent => draw_add_torrent(f, &app),
-        FloatingWidget::AddTorrentConfirm => draw_add_torrent_confirm(f, &app),
-        FloatingWidget::RemoveTorrent => draw_delete_torrent(f, &app),
-        FloatingWidget::ModifyColumns => draw_modify_columns(f, &app),
+        FloatingWidget::Help => draw_help(f, app),
+        FloatingWidget::Input => draw_input(f, app),
+        FloatingWidget::AddTorrent => draw_add_torrent(f, app),
+        FloatingWidget::AddTorrentConfirm => draw_add_torrent_confirm(f, app),
+        FloatingWidget::RemoveTorrent => draw_delete_torrent(f, app),
+        FloatingWidget::ModifyColumns => draw_modify_columns(f, app),
         _ => (),
     }
 }
 
 fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
     let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
+        .split(f.size());
+
+    let ver_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(f.size());
+        .split(chunks[0]);
 
     let block = Block::default().title("Torrents").borders(Borders::ALL);
     let (header_rows, rows) = app.get_torrent_rows();
@@ -64,21 +70,94 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
         .header(Row::new(header_rows))
         .block(block.clone())
         .widths(&widths)
-        .highlight_style(Style::default().bg(Color::Red));
-    f.render_stateful_widget(table, chunks[0], &mut state);
+        .style(app.config.get_style())
+        .highlight_style(
+            app.config.get_highlight_style(), // Style::default()
+                                              //     .bg(app.config.get_rgb(ConfigColor::BgHighlight))
+                                              //     .fg(Color::Black),
+        );
+    f.render_stateful_widget(table, ver_chunks[0], &mut state);
 
-    let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
-    f.render_widget(logs, chunks[1]);
+    let info_block = Block::default().title("Information").borders(Borders::ALL);
+    let sel_torrent = &app.torrents.arguments.torrents[app.selected_torrent.unwrap()];
+    let info_rows = vec![
+        Row::new(vec!["Name".to_string(), app.get_selected_torrent_name()]),
+        Row::new(vec![
+            "Total Size".to_string(),
+            convert_bytes(sel_torrent.total_size.unwrap()),
+        ]),
+        Row::new(vec![
+            "Percent Done".to_string(),
+            get_percentage(sel_torrent.percent_done.unwrap()),
+        ]),
+        Row::new(vec![
+            "Path".to_string(),
+            sel_torrent.download_dir.as_ref().unwrap().to_string(),
+        ]),
+        Row::new(vec![
+            "Added On".to_string(),
+            date(sel_torrent.added_date.unwrap()),
+        ]),
+        Row::new(vec![
+            "Completed On".to_string(),
+            date(sel_torrent.done_date.unwrap()),
+        ]),
+        Row::new(vec![
+            "Info Hash".to_string(),
+            sel_torrent.hash_string.as_ref().unwrap().to_string(),
+        ]),
+        Row::new(vec![
+            "Download speed".to_string(),
+            convert_rate(sel_torrent.rate_download.unwrap()),
+        ]),
+        Row::new(vec![
+            "Upload speed".to_string(),
+            convert_rate(*sel_torrent.rate_upload.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Downloaded".to_string(),
+            convert_bytes(
+                sel_torrent.size_when_done.as_ref().unwrap()
+                    - sel_torrent.left_until_done.as_ref().unwrap(),
+            ),
+        ]),
+        Row::new(vec![
+            "Uploaded".to_string(),
+            convert_bytes(*sel_torrent.uploaded_ever.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Ratio".to_string(),
+            format!("{:.2}", sel_torrent.upload_ratio.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Status",
+            status_string(sel_torrent.status.as_ref().unwrap()),
+        ]),
+        Row::new(vec![
+            "Eta".to_string(),
+            convert_secs(*sel_torrent.eta.as_ref().unwrap()),
+        ]),
+    ];
+
+    let info_table = Table::new(info_rows)
+        .block(info_block)
+        .style(app.config.get_style())
+        .widths(&[Constraint::Percentage(20), Constraint::Percentage(80)]);
+    f.render_widget(info_table, ver_chunks[1]);
+
+    // let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
+    // f.render_widget(logs, chunks[1]);
 }
 
-fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let tabs = Tabs::new(vec![
         Spans::from(Span::styled("Overview", Style::default())),
         Spans::from(Span::styled("Files", Style::default())),
         Spans::from(Span::styled("tab 3", Style::default())),
     ])
     .block(Block::default().borders(Borders::ALL).title("tabs"))
-    .highlight_style(Style::default().fg(Color::Yellow))
+    .style(app.config.get_style())
+    .highlight_style(app.config.get_style().fg(Color::Yellow))
     .select(app.selected_tab);
     let chunks = Layout::default()
         .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
@@ -114,7 +193,9 @@ fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
     ];
 
     let info_table = Table::new(info_rows)
+        .style(app.config.get_style())
         .block(info_block)
+        .style(app.config.get_style())
         .widths(&[Constraint::Percentage(20), Constraint::Percentage(80)]);
 
     let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
@@ -154,48 +235,99 @@ fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, area: Rec
 
     let transfer_table = Table::new(transfer_rows)
         .block(transfer_block)
+        .style(app.config.get_style())
         .widths(&[Constraint::Percentage(20), Constraint::Percentage(80)]);
 
     f.render_widget(info_table, chunks[0]);
     f.render_widget(transfer_table, chunks[1]);
 }
 
-fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-    let block = Block::default().title("Files").borders(Borders::ALL);
-    let mut rows = vec![];
-    let priorities = app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
-        .priorities
-        .as_ref()
-        .unwrap()
-        .iter()
-        .map(|f| f.to_string())
-        .collect::<Vec<String>>();
+fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
+    let logs = TuiLoggerWidget::default();
 
-    let mut index = 0;
-    for file in app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
-        .files
-        .as_ref()
-        .unwrap()
-    {
-        rows.push(Row::new(vec![
-            file.name.as_str(),
-            priorities[index].as_str(),
-        ]));
-        index += 1;
-    }
+    let tree_items = vec![
+        TreeItem::new_leaf("a"),
+        TreeItem::new(
+            "b",
+            vec![
+                TreeItem::new_leaf("c"),
+                TreeItem::new_leaf("d"),
+                TreeItem::new_leaf("e"),
+            ],
+        ),
+    ];
 
-    let mut state = TableState::default();
-    state.select(app.selected_file);
+    let items = Tree::new(tree_items)
+        .block(Block::default().title("tree widget"))
+        .style(app.config.get_style())
+        .highlight_style(app.config.get_highlight_style());
+    let mut state = TreeState::default();
+    f.render_stateful_widget(items, area, &mut state);
 
-    let table = Table::new(rows)
-        .header(Row::new(vec!["Filename", "Priority"]))
-        .block(block)
-        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
-        .highlight_style(Style::default().bg(Color::Red));
-    f.render_stateful_widget(table, area, &mut state);
+    // app.show_tree();
+    // let mut rows = Vec::new();
+    // let mut collapse = false;
+    // let mut depth = 1;
+    //
+    // for entry in &app.torrent_collapse_files {
+    //     if entry.collapse && !collapse {
+    //         collapse = true;
+    //         depth = entry.path.depth();
+    //     } else if collapse {
+    //         if entry.path.depth() == depth {
+    //             collapse = false;
+    //         }
+    //     }
+    //
+    //     if !collapse {
+    //         rows.push(Row::new(vec![entry.path.path().to_str().unwrap()]));
+    //     }
+    // }
+
+    // let table = Table::new(rows)
+    //     .widths(&[Constraint::Percentage(60), Constraint::Percentage(40)])
+    //     .highlight_style(Style::default().bg(Color::Red));
+    // let mut state = TableState::default();
+    // state.select(app.selected_file);
+
+    // f.render_stateful_widget(table, area, &mut state);
 }
+// fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
+//     let block = Block::default().title("Files").borders(Borders::ALL);
+//     let mut rows = vec![];
+//     let priorities = app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
+//         .priorities
+//         .as_ref()
+//         .unwrap()
+//         .iter()
+//         .map(|f| f.to_string())
+//         .collect::<Vec<String>>();
+//
+//     let mut index = 0;
+//     for file in app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
+//         .files
+//         .as_ref()
+//         .unwrap()
+//     {
+//         rows.push(Row::new(vec![
+//             file.name.as_str(),
+//             priorities[index].as_str(),
+//         ]));
+//         index += 1;
+//     }
+//
+//     let mut state = TableState::default();
+//     state.select(app.selected_file);
+//
+//     let table = Table::new(rows)
+//         .header(Row::new(vec!["Filename", "Priority"]))
+//         .block(block)
+//         .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+//         .highlight_style(Style::default().bg(Color::Red));
+//     f.render_stateful_widget(table, area, &mut state);
+// }
 
-fn draw_help<B: Backend>(f: &mut Frame<B>) {
+fn draw_help<B: Backend>(f: &mut Frame<B>, app: &App) {
     let block = Block::default().title("Help").borders(Borders::ALL);
     let area = floating_rect(f, 50, 15);
     let rows = vec![
@@ -207,12 +339,14 @@ fn draw_help<B: Backend>(f: &mut Frame<B>) {
         Row::new(vec!["r", "Rename torrent"]),
         Row::new(vec!["d", "Delete torrent"]),
         Row::new(vec!["t", "Toggle torrent files deletion"]),
+        Row::new(vec!["c", "Modify torrent field columns"]),
         Row::new(vec!["Enter", "Confirm"]),
         Row::new(vec!["Esc", "Go back"]),
         Row::new(vec!["q", "Exit"]),
     ];
     let table = Table::new(rows)
         .block(block)
+        .style(app.config.get_style())
         .widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
     f.render_widget(Clear, area);
     f.render_widget(table, area);
@@ -223,6 +357,7 @@ fn draw_input<B: Backend>(f: &mut Frame<B>, app: &App) {
     let input = Paragraph::new(app.input.as_ref()).block(
         Block::default()
             .borders(Borders::ALL)
+            .style(app.config.get_style())
             .title("Rename torrent"),
     );
 
@@ -239,7 +374,8 @@ fn draw_add_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
     }
     let list = List::new(rows)
         .block(Block::default().borders(Borders::ALL).title("Add torrent"))
-        .highlight_style(Style::default().bg(Color::Red));
+        .style(app.config.get_style())
+        .highlight_style(app.config.get_highlight_style());
 
     let mut state = ListState::default();
     state.select(app.selected_torrent_file);
@@ -278,18 +414,22 @@ fn draw_add_torrent_confirm<B: Backend>(f: &mut Frame<B>, app: &App) {
         ]),
         Row::new(vec!["Torrent name".to_string(), torrent.name.to_string()]),
         Row::new(vec!["Size".to_string(), convert_bytes(torrent.length)]),
-        Row::new(vec![
-            "Info hash".to_string(),
-            torrent.info_hash().to_string(),
-        ]),
+        Row::new(vec!["Info hash".to_string(), torrent.info_hash()]),
         Row::new(vec!["Start paused".to_string(), app.add_paused.to_string()]),
     ];
-    let table = Table::new(rows).widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
-    let block = Block::default().borders(Borders::ALL).title("Add torrent");
+    let table = Table::new(rows)
+        .style(app.config.get_style())
+        .widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Add torrent")
+        .style(app.config.get_style());
 
     f.render_widget(Clear, area);
     f.render_widget(
-        Paragraph::new(text).alignment(tui::layout::Alignment::Center),
+        Paragraph::new(text)
+            .alignment(tui::layout::Alignment::Center)
+            .style(app.config.get_style()),
         chunks[0],
     );
     f.render_widget(table, chunks[1]);
@@ -328,32 +468,59 @@ fn draw_delete_torrent<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(
         Paragraph::new(text)
             .block(block)
-            .alignment(tui::layout::Alignment::Center),
+            .alignment(tui::layout::Alignment::Center)
+            .style(app.config.get_style()),
         area,
     );
 }
 
 fn draw_modify_columns<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let area = floating_rect(f, 100, 20);
+    let area = floating_rect(f, 40, 15);
+    let chunks = Layout::default()
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .margin(1)
+        .split(area);
+    let text = Paragraph::new("Press Shift+j/k to reorder columns")
+        .alignment(tui::layout::Alignment::Center);
     let mut items = Vec::new();
 
     for column in &app.all_info_columns {
         let list_item = ListItem::new(column.column.to_str());
         if column.show {
-            items.push(list_item.style(Style::default().bg(Color::Green).fg(Color::Black)));
+            items.push(
+                list_item.style(
+                    app.config
+                        .get_style()
+                        .bg(app.config.bg_column_show)
+                        .fg(app.config.fg_column_show),
+                ),
+            );
         } else {
-            items.push(list_item.style(Style::default().bg(Color::Blue).fg(Color::Black)));
+            items.push(
+                list_item.style(
+                    app.config
+                        .get_style()
+                        .bg(app.config.bg_column_hide)
+                        .fg(app.config.fg_column_hide),
+                ),
+            );
+            // items.push(list_item.style(app.config.get_style().bg(Color::Blue).fg(Color::Black)));
         }
     }
 
-    let list = List::new(items).highlight_style(Style::default().bg(Color::Red));
+    let list = List::new(items)
+        .style(app.config.get_style())
+        .highlight_style(app.config.get_highlight_style());
     let block = Block::default()
         .borders(Borders::ALL)
+        .style(app.config.get_style())
         .title("Modify columns");
     let mut state = ListState::default();
     state.select(app.selected_column);
     f.render_widget(Clear, area);
-    f.render_stateful_widget(list.block(block), area, &mut state);
+    f.render_widget(block, area);
+    f.render_widget(text, chunks[0]);
+    f.render_stateful_widget(list, chunks[1], &mut state);
 }
 
 fn floating_rect<B: Backend>(f: &mut Frame<B>, width: u32, height: u32) -> Rect {
@@ -361,13 +528,13 @@ fn floating_rect<B: Backend>(f: &mut Frame<B>, width: u32, height: u32) -> Rect 
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage(
-                ((100 as f32 - height as f32 / f.size().height as f32 * 100 as f32) / 2 as f32)
-                    .ceil() as u16,
+                ((100_f32 - height as f32 / f.size().height as f32 * 100_f32) / 2_f32).ceil()
+                    as u16,
             ),
             Constraint::Length(height as u16),
             Constraint::Percentage(
-                ((100 as f32 - height as f32 / f.size().height as f32 * 100 as f32) / 2 as f32)
-                    .ceil() as u16,
+                ((100_f32 - height as f32 / f.size().height as f32 * 100_f32) / 2_f32).ceil()
+                    as u16,
             ),
         ])
         .split(f.size());
@@ -376,13 +543,11 @@ fn floating_rect<B: Backend>(f: &mut Frame<B>, width: u32, height: u32) -> Rect 
         .direction(tui::layout::Direction::Horizontal)
         .constraints([
             Constraint::Percentage(
-                ((100 as f32 - width as f32 / f.size().width as f32 * 100 as f32) / 2 as f32)
-                    .round() as u16,
+                ((100_f32 - width as f32 / f.size().width as f32 * 100_f32) / 2_f32).round() as u16,
             ),
             Constraint::Length(width as u16),
             Constraint::Percentage(
-                ((100 as f32 - width as f32 / f.size().width as f32 * 100 as f32) / 2 as f32)
-                    .round() as u16,
+                ((100_f32 - width as f32 / f.size().width as f32 * 100_f32) / 2_f32).round() as u16,
             ),
         ])
         .split(float_layout[1])[1]
