@@ -1,4 +1,5 @@
 use byte_unit::{Byte, ByteUnit};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 
 pub fn convert_bytes(size: i64) -> String {
     let mut byteunit = ByteUnit::B;
@@ -31,7 +32,7 @@ pub fn convert_rate(rate: i64) -> String {
 
 pub fn get_percentage(percent: f32) -> String {
     let percent = percent * 100f32;
-    format!("{} %", percent)
+    format!("{:.1} %", percent)
 }
 
 pub fn status_string(id: &i64) -> &'static str {
@@ -45,4 +46,44 @@ pub fn status_string(id: &i64) -> &'static str {
         6 => "Seeding",
         _ => "",
     }
+}
+
+pub fn date(date: i64) -> String {
+    let naive = NaiveDateTime::from_timestamp(date, 0);
+    let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+    datetime.format("%H:%M %d/%m/%Y").to_string()
+}
+
+pub fn convert_secs(secs: i64) -> String {
+    match secs {
+        -1 => return String::from("Done"),
+        -2 => return String::from("Inf"),
+        _ => (),
+    }
+
+    let mut time = Duration::seconds(secs);
+    let mut time_str = String::new();
+
+    let hours = time.num_hours();
+    if hours >= 1 {
+        time_str.push_str(format!("{}h ", hours).as_str());
+        time = time
+            .checked_sub(&Duration::hours(time.num_hours()))
+            .unwrap();
+    }
+
+    let minutes = time.num_minutes();
+    if minutes >= 1 {
+        time_str.push_str(format!("{}min ", minutes).as_str());
+        time = time
+            .checked_sub(&Duration::minutes(time.num_minutes()))
+            .unwrap();
+    }
+
+    let seconds = time.num_seconds();
+    if seconds >= 1 {
+        time_str.push_str(format!("{}sec", seconds).as_str());
+    }
+
+    time_str
 }
