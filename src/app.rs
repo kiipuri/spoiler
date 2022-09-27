@@ -14,8 +14,12 @@ use transmission_rpc::{
     TransClient,
 };
 use tui::widgets::Row;
+use walkdir::{DirEntry, WalkDir};
 
-use crate::conversion::{convert_rate, get_percentage, status_string};
+use crate::{
+    config::Config,
+    conversion::{convert_rate, get_percentage, status_string},
+};
 
 pub enum RouteId {
     TorrentList,
@@ -79,12 +83,18 @@ impl ColumnField {
     }
 }
 
+pub struct CollapsePath {
+    pub path: DirEntry,
+    pub collapse: bool,
+}
+
 pub struct ColumnAndShow {
     pub column: ColumnField,
     pub show: bool,
 }
 
 pub struct App {
+    pub config: Config,
     pub navigation_stack: Vec<Route>,
     pub torrents: RpcResponse<Torrents<Torrent>>,
     pub selected_torrent: Option<usize>,
@@ -102,6 +112,7 @@ pub struct App {
     pub delete_files: bool,
     pub all_info_columns: Vec<ColumnAndShow>,
     pub selected_column: Option<usize>,
+    pub torrent_collapse_files: Vec<CollapsePath>,
 }
 
 impl App {
@@ -125,6 +136,7 @@ impl App {
         });
 
         Self {
+            config: Config::new(),
             navigation_stack: vec![Route {
                 id: RouteId::TorrentList,
                 focused_widget: FocusableWidget::TorrentList,
@@ -186,6 +198,7 @@ impl App {
                 },
             ],
             selected_column: Some(0),
+            torrent_collapse_files: Vec::new(),
         }
     }
 
@@ -208,6 +221,7 @@ impl App {
     pub fn next(&mut self) {
         self.selected_torrent =
             Some((self.selected_torrent.unwrap() + 1) % self.torrents.arguments.torrents.len());
+        // self.show_tree();
     }
 
     pub fn previous(&mut self) {
@@ -216,6 +230,7 @@ impl App {
         } else {
             self.selected_torrent = Some(self.torrents.arguments.torrents.len() - 1);
         }
+        // self.show_tree();
     }
 
     pub fn next_column(&mut self) {
@@ -283,12 +298,11 @@ impl App {
 
     pub fn next_file(&mut self) {
         self.selected_file = Some(
-            (self.selected_file.unwrap() + 1)
-                % self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-                    .files
-                    .as_ref()
-                    .unwrap()
-                    .len(),
+            (self.selected_file.unwrap() + 1) % self.torrent_collapse_files.len(), // % self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+                                                                                   //     .files
+                                                                                   //     .as_ref()
+                                                                                   //     .unwrap()
+                                                                                   //     .len(),
         );
     }
 
@@ -297,12 +311,12 @@ impl App {
             self.selected_file = Some(self.selected_file.unwrap() - 1);
         } else {
             self.selected_file = Some(
-                self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-                    .files
-                    .as_ref()
-                    .unwrap()
-                    .len()
-                    - 1,
+                self.torrent_collapse_files.len() - 1, // self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+                                                       //     .files
+                                                       //     .as_ref()
+                                                       //     .unwrap()
+                                                       //     .len()
+                                                       //     - 1,
             )
         }
     }
@@ -367,7 +381,7 @@ impl App {
                         row_strs.push(torrent.eta.unwrap().to_string());
                     }
                     ColumnField::Status => {
-                        row_strs.push(status_string(&torrent.status.as_ref().unwrap()).to_string());
+                        row_strs.push(status_string(torrent.status.as_ref().unwrap()).to_string());
                     }
                     ColumnField::Progress => {
                         row_strs.push(get_percentage(
@@ -485,6 +499,50 @@ impl App {
             .name
             .to_owned()
             .unwrap()
+    }
+
+    pub fn show_tree(&mut self) {
+        self.torrent_collapse_files.clear();
+        let mut files = Vec::new();
+        let mut dir = self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+            .download_dir
+            .as_ref()
+            .unwrap()
+            .to_owned();
+
+        dir.push_str(&self.get_selected_torrent_name());
+        // TODO: loop torrent.files
+
+        let walker = WalkDir::new(dir)
+            .sort_by(|a, b| b.path().is_dir().cmp(&a.path().is_dir()))
+            .into_iter();
+
+        for entry in walker {
+            let path = CollapsePath {
+                path: entry.unwrap(),
+                collapse: false,
+            };
+            files.push(path);
+        }
+
+        let mut collapse = false;
+        let mut depth = 1;
+
+        for entry in files {
+            if entry.collapse && !collapse {
+                collapse = true;
+                depth = entry.path.depth();
+            } else if collapse {
+                if entry.path.depth() == depth {
+                    collapse = false;
+                }
+            }
+
+            if !collapse {
+                // log::error!("{}", entry.path.path().display());
+                self.torrent_collapse_files.push(entry);
+            }
+        }
     }
 }
 
