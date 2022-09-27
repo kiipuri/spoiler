@@ -29,14 +29,12 @@ impl Events {
             loop {
                 if poll(tick_rate).unwrap() {
                     if let Event::Key(key) = event::read().unwrap() {
-                        if let Err(_) = tx.send(InputEvent::Input(key)).await {
+                        if (tx.send(InputEvent::Input(key)).await).is_err() {
                             error!("event poll errored");
                         };
                     }
-                } else {
-                    if let Err(_) = tx.send(InputEvent::Tick).await {
-                        error!("event poll errored");
-                    }
+                } else if (tx.send(InputEvent::Tick).await).is_err() {
+                    error!("event poll errored");
                 }
 
                 if event_stop_capture.load(Ordering::Relaxed) {
