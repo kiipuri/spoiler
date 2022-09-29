@@ -254,22 +254,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossterm"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e64e6c0fbe2c17357405f7c758c1ef960fce08bdfb2c03d88d2a18d7e09c4b67"
-dependencies = [
- "bitflags",
- "crossterm_winapi",
- "libc",
- "mio",
- "parking_lot",
- "signal-hook",
- "signal-hook-mio",
- "winapi",
-]
-
-[[package]]
 name = "crossterm_winapi"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -364,18 +348,18 @@ dependencies = [
 
 [[package]]
 name = "enum-iterator"
-version = "0.7.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4eeac5c5edb79e4e39fe8439ef35207780a11f69c52cbe424ce3dfad4cb78de6"
+checksum = "2953d1df47ac0eb70086ccabf0275aa8da8591a28bd358ee2b52bd9f9e3ff9e9"
 dependencies = [
  "enum-iterator-derive",
 ]
 
 [[package]]
 name = "enum-iterator-derive"
-version = "0.7.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c134c37760b27a871ba422106eedbb8247da973a09e82558bf26d619c882b159"
+checksum = "8958699f9359f0b04e691a13850d48b7de329138023876d07cbd024c2c820598"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1409,14 +1393,14 @@ dependencies = [
  "clippy",
  "colors-transform",
  "config",
- "crossterm 0.23.2",
+ "crossterm",
  "lava_torrent",
  "log",
  "serde",
  "tokio",
  "toml",
  "transmission-rpc",
- "tui 0.19.0",
+ "tui",
  "tui-logger",
  "tui-tree-widget",
  "unicode-width",
@@ -1453,8 +1437,6 @@ dependencies = [
 [[package]]
 name = "transmission-rpc"
 version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "044b318bbc5d8ebf2830610f4f0da4df2e20a70ff8b8cb53f00c335203211ed5"
 dependencies = [
  "dotenv",
  "enum-iterator",
@@ -1478,19 +1460,7 @@ checksum = "96fe69244ec2af261bced1d9046a6fee6c8c2a6b0228e59e5ba39bc8ba4ed729"
 dependencies = [
  "bitflags",
  "cassowary",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "tui"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccdd26cbd674007e649a272da4475fb666d3aa0ad0531da7136db6fab0e5bad1"
-dependencies = [
- "bitflags",
- "cassowary",
- "crossterm 0.25.0",
+ "crossterm",
  "unicode-segmentation",
  "unicode-width",
 ]
@@ -1507,16 +1477,16 @@ dependencies = [
  "log",
  "parking_lot",
  "slog",
- "tui 0.18.0",
+ "tui",
 ]
 
 [[package]]
 name = "tui-tree-widget"
-version = "0.11.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64cd64e2088f26dd5f7e5239cdd7ee234098d3bda4dc214e4bb58c2049ce5af3"
+checksum = "0390703e72885fd3b55ab9f767c753f50793e54b88182c1bcb658e6f85b9b0eb"
 dependencies = [
- "tui 0.19.0",
+ "tui",
  "unicode-width",
 ]
 

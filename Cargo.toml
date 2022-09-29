@@ -6,9 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tui = "0.19"
+tui = "0.18"
 crossterm = "0.23"
-transmission-rpc = "0.3.6"
+# transmission-rpc = "0.3.6"
+transmission-rpc = { path = "../transmission-rpc/" }
 tokio = { version = "1.20.1", features = ["full"] }
 log = "0.4"
 tui-logger = "0.8"
@@ -17,7 +18,7 @@ unicode-width = "0.1.10"
 lava_torrent = "0.8.1"
 chrono = "0.4.22"
 walkdir = "2.3.2"
-tui-tree-widget = "0.11.0"
+tui-tree-widget = "0.9.0"
 colors-transform = "0.2.11"
 toml = "0.5.9"
 serde = { version = "1.0", features = ["derive"] }
