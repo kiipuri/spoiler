@@ -49,6 +49,9 @@ pub fn status_string(id: &i64) -> &'static str {
 }
 
 pub fn date(date: i64) -> String {
+    if date == 0 {
+        return "".to_string();
+    }
     let naive = NaiveDateTime::from_timestamp(date, 0);
     let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
     datetime.format("%H:%M %d/%m/%Y").to_string()
@@ -63,6 +66,12 @@ pub fn convert_secs(secs: i64) -> String {
 
     let mut time = Duration::seconds(secs);
     let mut time_str = String::new();
+
+    let days = time.num_days();
+    if days >= 1 {
+        time_str.push_str(format!("{}d ", days).as_str());
+        return time_str;
+    }
 
     let hours = time.num_hours();
     if hours >= 1 {
