@@ -117,7 +117,7 @@ pub struct App {
 
 impl App {
     pub async fn new() -> Self {
-        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
         let response: transmission_rpc::types::Result<RpcResponse<SessionGet>> =
             client.session_get().await;
         match response {
@@ -297,39 +297,20 @@ impl App {
     }
 
     pub fn next_file(&mut self) {
-        self.selected_file = Some(
-            (self.selected_file.unwrap() + 1) % self.torrent_collapse_files.len(), // % self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-                                                                                   //     .files
-                                                                                   //     .as_ref()
-                                                                                   //     .unwrap()
-                                                                                   //     .len(),
-        );
+        self.selected_file =
+            Some((self.selected_file.unwrap() + 1) % self.torrent_collapse_files.len());
     }
 
     pub fn previous_file(&mut self) {
         if self.selected_file.unwrap() > 0 {
             self.selected_file = Some(self.selected_file.unwrap() - 1);
         } else {
-            self.selected_file = Some(
-                self.torrent_collapse_files.len() - 1, // self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-                                                       //     .files
-                                                       //     .as_ref()
-                                                       //     .unwrap()
-                                                       //     .len()
-                                                       //     - 1,
-            )
+            self.selected_file = Some(self.torrent_collapse_files.len() - 1)
         }
     }
 
-    // pub async fn increment_priority(&mut self) {
-    //     self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-    //         .priorities
-    //         .as_mut()
-    //         .unwrap()[self.selected_file.unwrap()] = 1i8;
-    // }
-
     pub async fn toggle_torrent_pause(&mut self) {
-        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
 
         let id = self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
             .id
@@ -430,7 +411,7 @@ impl App {
     }
 
     pub async fn rename_torrent(&mut self) {
-        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
         client
             .torrent_rename_path(
                 vec![Id::Id(self.get_selected_torrent_id())],
@@ -442,7 +423,7 @@ impl App {
     }
 
     pub async fn add_torrent(&mut self) {
-        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
         let add: TorrentAddArgs = TorrentAddArgs {
             filename: Some(
                 self.torrent_files[self.selected_torrent_file.unwrap()]
@@ -457,7 +438,7 @@ impl App {
     }
 
     pub async fn remove_torrent(&mut self) {
-        let client = TransClient::new("http://localhost:9091/transmission/rpc");
+        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
         client
             .torrent_remove(
                 vec![Id::Id(self.get_selected_torrent_id())],
@@ -532,14 +513,11 @@ impl App {
             if entry.collapse && !collapse {
                 collapse = true;
                 depth = entry.path.depth();
-            } else if collapse {
-                if entry.path.depth() == depth {
-                    collapse = false;
-                }
+            } else if collapse && entry.path.depth() == depth {
+                collapse = false;
             }
 
             if !collapse {
-                // log::error!("{}", entry.path.path().display());
                 self.torrent_collapse_files.push(entry);
             }
         }
@@ -547,7 +525,7 @@ impl App {
 }
 
 pub async fn get_all_torrents(app: &Arc<Mutex<App>>) {
-    let client = TransClient::new("http://localhost:9091/transmission/rpc");
+    let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
     let mut torrents = client.torrent_get(None, None).await.unwrap();
     torrents.arguments.torrents.sort_by(|a, b| {
         a.name
