@@ -5,11 +5,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use transmission_rpc::{
     types::{
-        Id, RpcResponse, SessionGet, Torrent, TorrentAction, TorrentAddArgs, TorrentGetField,
-        Torrents,
+        Id, RpcResponse, SessionGet, SessionStats, Torrent, TorrentAction, TorrentAddArgs,
+        TorrentGetField, Torrents,
     },
     TransClient,
 };
@@ -18,7 +17,10 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     config::Config,
-    conversion::{convert_rate, get_percentage, status_string},
+    conversion::{
+        compare_float, compare_int, compare_string, convert_rate, date, get_status_percentage,
+        status_string,
+    },
 };
 
 pub enum RouteId {
@@ -52,6 +54,7 @@ pub enum InputMode {
     Editing,
 }
 
+#[derive(Clone, Copy)]
 pub enum ColumnField {
     Name,
     Status,
@@ -66,7 +69,7 @@ pub enum ColumnField {
 }
 
 impl ColumnField {
-    pub fn to_str(&self) -> String {
+    pub fn as_str(&self) -> String {
         match self {
             ColumnField::Name => "Name",
             ColumnField::Status => "Status",
@@ -94,6 +97,7 @@ pub struct ColumnAndShow {
 }
 
 pub struct App {
+    pub session_stats: SessionStats,
     pub config: Config,
     pub navigation_stack: Vec<Route>,
     pub torrents: RpcResponse<Torrents<Torrent>>,
@@ -103,7 +107,7 @@ pub struct App {
     pub floating_widget: FloatingWidget,
     pub should_quit: bool,
     pub sort_descending: bool,
-    pub sort_column: u32,
+    pub sort_column: ColumnField,
     pub input_mode: InputMode,
     pub input: String,
     pub torrent_files: Vec<PathBuf>,
@@ -135,7 +139,10 @@ impl App {
                 .cmp(&b.name.as_ref().unwrap().to_lowercase())
         });
 
+        let session_stats = client.session_stats().await.unwrap().arguments;
+
         Self {
+            session_stats,
             config: Config::new(),
             navigation_stack: vec![Route {
                 id: RouteId::TorrentList,
@@ -148,7 +155,7 @@ impl App {
             should_quit: false,
             torrents,
             sort_descending: true,
-            sort_column: 0,
+            sort_column: ColumnField::Name,
             input_mode: InputMode::Normal,
             input: String::new(),
             torrent_files: vec![],
@@ -365,9 +372,7 @@ impl App {
                         row_strs.push(status_string(torrent.status.as_ref().unwrap()).to_string());
                     }
                     ColumnField::Progress => {
-                        row_strs.push(get_percentage(
-                            torrent.percent_done.as_ref().unwrap().to_owned(),
-                        ));
+                        row_strs.push(get_status_percentage(torrent));
                     }
                     ColumnField::DownloadRate => {
                         row_strs.push(convert_rate(*torrent.rate_download.as_ref().unwrap()));
@@ -379,16 +384,10 @@ impl App {
                         row_strs.push(format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()));
                     }
                     ColumnField::DoneDate => {
-                        let naive = NaiveDateTime::from_timestamp(torrent.done_date.unwrap(), 0);
-                        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-                        let newdate = datetime.format("%H:%M %d/%m/%Y");
-                        row_strs.push(newdate.to_string());
+                        row_strs.push(date(torrent.done_date.unwrap()));
                     }
                     ColumnField::AddedDate => {
-                        let naive = NaiveDateTime::from_timestamp(torrent.added_date.unwrap(), 0);
-                        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-                        let newdate = datetime.format("%H:%M %d/%m/%Y");
-                        row_strs.push(newdate.to_string());
+                        row_strs.push(date(torrent.added_date.unwrap()));
                     }
                 }
             }
@@ -399,7 +398,7 @@ impl App {
             if !field.show {
                 continue;
             }
-            header_rows.push(field.column.to_str());
+            header_rows.push(field.column.as_str());
         }
 
         (header_rows, rows)
@@ -443,6 +442,17 @@ impl App {
             .torrent_remove(
                 vec![Id::Id(self.get_selected_torrent_id())],
                 self.delete_files,
+            )
+            .await
+            .unwrap();
+    }
+
+    pub async fn verify_torrent(&mut self) {
+        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
+        client
+            .torrent_action(
+                TorrentAction::Verify,
+                vec![Id::Id(self.get_selected_torrent_id())],
             )
             .await
             .unwrap();
@@ -527,18 +537,35 @@ impl App {
 pub async fn get_all_torrents(app: &Arc<Mutex<App>>) {
     let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
     let mut torrents = client.torrent_get(None, None).await.unwrap();
-    torrents.arguments.torrents.sort_by(|a, b| {
-        a.name
-            .as_ref()
-            .unwrap()
-            .to_lowercase()
-            .cmp(&b.name.as_ref().unwrap().to_lowercase())
-    });
+    let session_stats = client.session_stats().await.unwrap().arguments;
 
     let mut app = app.lock().unwrap();
+
+    torrents
+        .arguments
+        .torrents
+        .sort_by(|a, b| match app.sort_column {
+            ColumnField::Id => compare_int(a.id.unwrap(), b.id.unwrap()),
+            ColumnField::Name => compare_string(a.name.as_ref().unwrap(), b.name.as_ref().unwrap()),
+            ColumnField::Status => compare_int(a.status.unwrap(), b.status.unwrap()),
+            ColumnField::Progress => {
+                compare_float(a.percent_done.unwrap(), b.percent_done.unwrap())
+            }
+            ColumnField::Eta => compare_int(a.eta.unwrap(), b.eta.unwrap()),
+            ColumnField::UploadRate => compare_int(a.rate_upload.unwrap(), b.rate_upload.unwrap()),
+            ColumnField::DownloadRate => {
+                compare_int(a.rate_download.unwrap(), b.rate_download.unwrap())
+            }
+            ColumnField::UploadRatio => {
+                compare_float(a.upload_ratio.unwrap(), b.upload_ratio.unwrap())
+            }
+            ColumnField::DoneDate => compare_int(a.done_date.unwrap(), b.done_date.unwrap()),
+            ColumnField::AddedDate => compare_int(a.added_date.unwrap(), b.added_date.unwrap()),
+        });
 
     if !app.sort_descending {
         torrents.arguments.torrents.reverse();
     }
     app.torrents = torrents;
+    app.session_stats = session_stats;
 }
