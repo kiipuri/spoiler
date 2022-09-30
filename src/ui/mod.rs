@@ -1,6 +1,9 @@
 use crate::{
     app::{FloatingWidget, RouteId},
-    conversion::{convert_bytes, convert_rate, convert_secs, date, get_percentage, status_string},
+    conversion::{
+        convert_bytes, convert_rate, convert_secs, date, get_percentage, get_status_percentage,
+        status_string,
+    },
 };
 use tui::{
     backend::Backend,
@@ -44,7 +47,14 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     let ver_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .constraints(
+            [
+                Constraint::Length(f.size().height - 16),
+                Constraint::Length(13),
+                Constraint::Length(3),
+            ]
+            .as_ref(),
+        )
         .split(chunks[0]);
 
     let info_transfer_chunks = Layout::default()
@@ -94,7 +104,7 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
         ]),
         Row::new(vec![
             "Progress".to_string(),
-            get_percentage(sel_torrent.percent_done.unwrap()),
+            get_status_percentage(sel_torrent),
         ]),
         Row::new(vec![
             "Save Path".to_string(),
@@ -117,7 +127,7 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
             sel_torrent.comment.as_ref().unwrap().to_string(),
         ]),
         Row::new(vec![
-            "Created on".to_string(),
+            "Created On".to_string(),
             sel_torrent.creator.as_ref().unwrap().to_string(),
         ]),
         Row::new(vec![
@@ -128,7 +138,7 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     let transfer_rows = vec![
         Row::new(vec![
-            "Time active".to_string(),
+            "Time Active".to_string(),
             convert_secs(
                 sel_torrent.seconds_downloading.unwrap() + sel_torrent.seconds_seeding.unwrap(),
             ),
@@ -141,11 +151,11 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
             ),
         ]),
         Row::new(vec![
-            "Download speed".to_string(),
+            "Download Speed".to_string(),
             convert_rate(sel_torrent.rate_download.unwrap()),
         ]),
         Row::new(vec![
-            "Download limit".to_string(),
+            "Download Limit".to_string(),
             convert_rate(sel_torrent.download_limit.unwrap() * 1000),
         ]),
         Row::new(vec![
@@ -153,11 +163,11 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
             convert_bytes(*sel_torrent.uploaded_ever.as_ref().unwrap()),
         ]),
         Row::new(vec![
-            "Upload speed".to_string(),
+            "Upload Speed".to_string(),
             convert_rate(*sel_torrent.rate_upload.as_ref().unwrap()),
         ]),
         Row::new(vec![
-            "Upload limit".to_string(),
+            "Upload Limit".to_string(),
             convert_rate(*sel_torrent.upload_limit.as_ref().unwrap() * 1000),
         ]),
         Row::new(vec![
@@ -174,7 +184,22 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
         ]),
     ];
 
-    log::error!("{:?}", sel_torrent.seconds_seeding.as_ref().unwrap());
+    let ses = format!(
+        "Down: {}   Up: {}   Downloaded: {}   Uploaded: {}   ",
+        convert_rate(app.session_stats.download_speed),
+        convert_rate(app.session_stats.upload_speed),
+        convert_bytes(app.session_stats.current_stats.downloaded_bytes),
+        convert_bytes(app.session_stats.current_stats.uploaded_bytes),
+    );
+
+    let session_block = Block::default()
+        .style(app.config.get_style())
+        .borders(Borders::ALL)
+        .title("Session Stats");
+
+    let session_text = Paragraph::new(ses)
+        .block(session_block)
+        .style(app.config.get_style());
 
     let info_table = Table::new(info_rows)
         .block(info_block)
@@ -187,6 +212,8 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
         .style(app.config.get_style())
         .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)]);
     f.render_widget(transfer_table, info_transfer_chunks[1]);
+
+    f.render_widget(session_text, ver_chunks[2]);
 
     let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
     f.render_widget(logs, chunks[1]);
@@ -528,7 +555,7 @@ fn draw_modify_columns<B: Backend>(f: &mut Frame<B>, app: &App) {
     let mut items = Vec::new();
 
     for column in &app.all_info_columns {
-        let list_item = ListItem::new(column.column.to_str());
+        let list_item = ListItem::new(column.column.as_str());
         if column.show {
             items.push(
                 list_item.style(
