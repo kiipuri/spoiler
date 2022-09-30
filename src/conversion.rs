@@ -1,5 +1,8 @@
+use std::cmp::Ordering;
+
 use byte_unit::{Byte, ByteUnit};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use transmission_rpc::types::Torrent;
 
 pub fn convert_bytes(size: i64) -> String {
     let mut byteunit = ByteUnit::B;
@@ -30,13 +33,22 @@ pub fn convert_rate(rate: i64) -> String {
     format!("{}/s", rate)
 }
 
+pub fn get_status_percentage(torrent: &Torrent) -> String {
+    match torrent.status.unwrap() {
+        2 => get_percentage(torrent.recheck_progress.unwrap()),
+        4 => get_percentage(torrent.percent_done.unwrap()),
+        6 => get_percentage(torrent.percent_done.unwrap()),
+        _ => "".to_string(),
+    }
+}
+
 pub fn get_percentage(percent: f32) -> String {
     let percent = percent * 100f32;
     format!("{:.1} %", percent)
 }
 
-pub fn status_string(id: &i64) -> &'static str {
-    match id {
+pub fn status_string(status: &i64) -> &'static str {
+    match status {
         0 => "Stopped",
         1 => "Queued to verify local data",
         2 => "Verifying local data",
@@ -54,7 +66,7 @@ pub fn date(date: i64) -> String {
     }
     let naive = NaiveDateTime::from_timestamp(date, 0);
     let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-    datetime.format("%H:%M %d/%m/%Y").to_string()
+    datetime.format("%d/%m/%Y %H:%M").to_string()
 }
 
 pub fn convert_secs(secs: i64) -> String {
@@ -95,4 +107,20 @@ pub fn convert_secs(secs: i64) -> String {
     }
 
     time_str
+}
+
+pub fn compare_int(a: i64, b: i64) -> Ordering {
+    a.cmp(&b)
+}
+
+pub fn compare_float(a: f32, b: f32) -> Ordering {
+    if a.min(b) == a {
+        Ordering::Less
+    } else {
+        Ordering::Greater
+    }
+}
+
+pub fn compare_string(a: &String, b: &String) -> Ordering {
+    a.cmp(b)
 }
