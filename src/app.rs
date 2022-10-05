@@ -7,10 +7,7 @@ use std::{
 };
 
 use transmission_rpc::{
-    types::{
-        Id, RpcResponse, SessionGet, SessionStats, Torrent, TorrentAction, TorrentAddArgs,
-        TorrentGetField, Torrents,
-    },
+    types::{Id, SessionStats, Torrent, TorrentAction, TorrentAddArgs, TorrentGetField},
     TransClient,
 };
 use tui::widgets::Row;
@@ -94,10 +91,10 @@ pub struct ColumnAndShow {
 }
 
 pub struct App<'a> {
-    pub session_stats: SessionStats,
+    pub session_stats: Option<SessionStats>,
     pub config: Config,
     pub navigation_stack: Vec<Route>,
-    pub torrents: RpcResponse<Torrents<Torrent>>,
+    pub torrents: Vec<Torrent>,
     pub selected_torrent: Option<usize>,
     pub selected_tab: usize,
     pub floating_widget: FloatingWidget,
@@ -117,28 +114,8 @@ pub struct App<'a> {
 
 impl<'a> App<'a> {
     pub async fn new() -> App<'a> {
-        let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
-        let response: transmission_rpc::types::Result<RpcResponse<SessionGet>> =
-            client.session_get().await;
-        match response {
-            Ok(_) => (),
-            Err(_) => panic!("Oh no!"),
-        }
-
-        let response = client.torrent_get(None, None).await;
-        let mut torrents = response.unwrap();
-        torrents.arguments.torrents.sort_by(|a, b| {
-            a.name
-                .as_ref()
-                .unwrap()
-                .to_lowercase()
-                .cmp(&b.name.as_ref().unwrap().to_lowercase())
-        });
-
-        let session_stats = client.session_stats().await.unwrap().arguments;
-
         Self {
-            session_stats,
+            session_stats: None,
             config: Config::new(),
             navigation_stack: vec![Route {
                 id: RouteId::TorrentList,
@@ -148,7 +125,7 @@ impl<'a> App<'a> {
             selected_torrent: Some(0),
             selected_tab: 0,
             should_quit: false,
-            torrents,
+            torrents: Vec::new(),
             sort_descending: true,
             sort_column: ColumnField::Name,
             input_mode: InputMode::Normal,
@@ -220,18 +197,17 @@ impl<'a> App<'a> {
         }
     }
 
-    fn tree_with_path(&mut self) {
+    pub fn tree_with_path(&mut self) {
         let torrent = self.get_selected_torrent();
         let mut path_str = torrent.download_dir.as_ref().unwrap().to_owned();
         path_str.push_str(torrent.name.as_ref().unwrap());
         let path = PathBuf::from_str(&path_str).unwrap();
-        self.tree.items = make_tree(path);
+        self.tree.items = make_tree(path, &self);
         self.tree.state = TreeState::default();
     }
 
     pub fn next(&mut self) {
-        self.selected_torrent =
-            Some((self.selected_torrent.unwrap() + 1) % self.torrents.arguments.torrents.len());
+        self.selected_torrent = Some((self.selected_torrent.unwrap() + 1) % self.torrents.len());
         self.tree_with_path();
     }
 
@@ -239,7 +215,7 @@ impl<'a> App<'a> {
         if self.selected_torrent > Some(0) {
             self.selected_torrent = Some(self.selected_torrent.unwrap() - 1);
         } else {
-            self.selected_torrent = Some(self.torrents.arguments.torrents.len() - 1);
+            self.selected_torrent = Some(self.torrents.len() - 1);
         }
         self.tree_with_path();
     }
@@ -318,9 +294,7 @@ impl<'a> App<'a> {
     pub async fn toggle_torrent_pause(&mut self) {
         let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
 
-        let id = self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-            .id
-            .unwrap();
+        let id = self.torrents[self.selected_torrent.unwrap()].id.unwrap();
 
         let status = client
             .torrent_get(Some(vec![TorrentGetField::Status]), Some(vec![Id::Id(id)]))
@@ -339,9 +313,7 @@ impl<'a> App<'a> {
             .torrent_action(
                 action,
                 vec![Id::Id(
-                    self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-                        .id
-                        .unwrap(),
+                    self.torrents[self.selected_torrent.unwrap()].id.unwrap(),
                 )],
             )
             .await
@@ -350,7 +322,7 @@ impl<'a> App<'a> {
 
     pub fn get_torrent_rows(&self) -> (Vec<String>, Vec<Row>) {
         let mut rows = Vec::new();
-        for torrent in &self.torrents.arguments.torrents {
+        for torrent in &self.torrents {
             let mut row_strs = Vec::new();
             for field in &self.all_info_columns {
                 if !field.show {
@@ -478,17 +450,15 @@ impl<'a> App<'a> {
     }
 
     fn get_selected_torrent_id(&self) -> i64 {
-        self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-            .id
-            .unwrap()
+        self.torrents[self.selected_torrent.unwrap()].id.unwrap()
     }
 
     pub fn get_selected_torrent(&self) -> &Torrent {
-        &self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+        &self.torrents[self.selected_torrent.unwrap()]
     }
 
     pub fn get_selected_torrent_name(&self) -> String {
-        self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+        self.torrents[self.selected_torrent.unwrap()]
             .name
             .to_owned()
             .unwrap()
@@ -497,36 +467,34 @@ impl<'a> App<'a> {
 
 pub async fn get_all_torrents<'a>(app: &Arc<Mutex<App<'a>>>) {
     let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
-    let mut torrents = client.torrent_get(None, None).await.unwrap();
+    let mut torrents = client
+        .torrent_get(None, None)
+        .await
+        .unwrap()
+        .arguments
+        .torrents;
     let session_stats = client.session_stats().await.unwrap().arguments;
 
     let mut app = app.lock().unwrap();
 
-    torrents
-        .arguments
-        .torrents
-        .sort_by(|a, b| match app.sort_column {
-            ColumnField::Id => compare_int(a.id.unwrap(), b.id.unwrap()),
-            ColumnField::Name => compare_string(a.name.as_ref().unwrap(), b.name.as_ref().unwrap()),
-            ColumnField::Status => compare_int(a.status.unwrap(), b.status.unwrap()),
-            ColumnField::Progress => {
-                compare_float(a.percent_done.unwrap(), b.percent_done.unwrap())
-            }
-            ColumnField::Eta => compare_int(a.eta.unwrap(), b.eta.unwrap()),
-            ColumnField::UploadRate => compare_int(a.rate_upload.unwrap(), b.rate_upload.unwrap()),
-            ColumnField::DownloadRate => {
-                compare_int(a.rate_download.unwrap(), b.rate_download.unwrap())
-            }
-            ColumnField::UploadRatio => {
-                compare_float(a.upload_ratio.unwrap(), b.upload_ratio.unwrap())
-            }
-            ColumnField::DoneDate => compare_int(a.done_date.unwrap(), b.done_date.unwrap()),
-            ColumnField::AddedDate => compare_int(a.added_date.unwrap(), b.added_date.unwrap()),
-        });
+    torrents.sort_by(|a, b| match app.sort_column {
+        ColumnField::Id => compare_int(a.id.unwrap(), b.id.unwrap()),
+        ColumnField::Name => compare_string(a.name.as_ref().unwrap(), b.name.as_ref().unwrap()),
+        ColumnField::Status => compare_int(a.status.unwrap(), b.status.unwrap()),
+        ColumnField::Progress => compare_float(a.percent_done.unwrap(), b.percent_done.unwrap()),
+        ColumnField::Eta => compare_int(a.eta.unwrap(), b.eta.unwrap()),
+        ColumnField::UploadRate => compare_int(a.rate_upload.unwrap(), b.rate_upload.unwrap()),
+        ColumnField::DownloadRate => {
+            compare_int(a.rate_download.unwrap(), b.rate_download.unwrap())
+        }
+        ColumnField::UploadRatio => compare_float(a.upload_ratio.unwrap(), b.upload_ratio.unwrap()),
+        ColumnField::DoneDate => compare_int(a.done_date.unwrap(), b.done_date.unwrap()),
+        ColumnField::AddedDate => compare_int(a.added_date.unwrap(), b.added_date.unwrap()),
+    });
 
     if !app.sort_descending {
-        torrents.arguments.torrents.reverse();
+        torrents.reverse();
     }
     app.torrents = torrents;
-    app.session_stats = session_stats;
+    app.session_stats = Some(session_stats);
 }
