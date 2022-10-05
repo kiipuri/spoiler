@@ -30,6 +30,12 @@ async fn main() -> io::Result<()> {
     let app = Arc::new(Mutex::new(App::new().await));
     let app_ui = Arc::clone(&app);
 
+    {
+        get_all_torrents(&app).await;
+        let mut app = app.lock().unwrap();
+        app.tree_with_path();
+    }
+
     tokio::spawn(async move {
         loop {
             let app = app.clone();
