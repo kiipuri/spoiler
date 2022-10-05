@@ -1,5 +1,5 @@
 use colors_transform::Rgb;
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 pub struct Config {
     pub fg_normal: tui::style::Color,
@@ -9,6 +9,7 @@ pub struct Config {
     pub bg_column_show: tui::style::Color,
     pub fg_column_hide: tui::style::Color,
     pub bg_column_hide: tui::style::Color,
+    pub torrent_search_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -20,6 +21,8 @@ impl Config {
             .add_source(config::File::from(config_path))
             .build();
 
+        let torrent_search_dir = dirs::download_dir();
+
         let mut config = Config {
             fg_normal: tui::style::Color::Reset,
             fg_highlight: get_rgb("#000".to_string()),
@@ -28,12 +31,13 @@ impl Config {
             bg_column_show: get_rgb("#0f0".to_string()),
             fg_column_hide: get_rgb("#000".to_string()),
             bg_column_hide: get_rgb("#00f".to_string()),
+            torrent_search_dir,
         };
 
         if let Ok(conf) = config_build {
-            for thing in conf.try_deserialize::<HashMap<String, String>>().unwrap() {
-                let rgb = get_rgb(thing.1);
-                match thing.0.as_str() {
+            for field in conf.try_deserialize::<HashMap<String, String>>().unwrap() {
+                let rgb = get_rgb(field.1.to_string());
+                match field.0.as_str() {
                     "fg_normal" => config.fg_normal = rgb,
                     "fg_highlight" => config.fg_highlight = rgb,
                     "bg_highlight" => config.bg_highlight = rgb,
@@ -41,6 +45,9 @@ impl Config {
                     "bg_column_show" => config.bg_column_show = rgb,
                     "fg_column_hide" => config.fg_column_hide = rgb,
                     "bg_column_hide" => config.bg_column_hide = rgb,
+                    "torrent_search_dir" => {
+                        config.torrent_search_dir = PathBuf::from_str(field.1.as_str()).ok()
+                    }
                     _ => (),
                 }
             }
