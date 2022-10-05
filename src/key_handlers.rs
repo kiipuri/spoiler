@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::{App, FloatingWidget, FocusableWidget, InputMode, Route, RouteId};
 
-pub async fn handler(key: KeyEvent, app: &mut App) {
+pub async fn handler(key: KeyEvent, app: &mut App<'static>) {
     match app.input_mode {
         InputMode::Normal => match key.code {
             KeyCode::Char('K') | KeyCode::Char('k') | KeyCode::Up => handle_up(key, app),
@@ -38,7 +38,7 @@ pub async fn handler(key: KeyEvent, app: &mut App) {
     }
 }
 
-fn handle_up(key: KeyEvent, app: &mut App) {
+fn handle_up(key: KeyEvent, app: &mut App<'static>) {
     match app.floating_widget {
         FloatingWidget::AddTorrent => {
             app.previous_torrent_file();
@@ -60,12 +60,12 @@ fn handle_up(key: KeyEvent, app: &mut App) {
 
     match app.last_route_focused_widget() {
         Some(FocusableWidget::TorrentList) => app.previous(),
-        Some(FocusableWidget::FileList) => app.previous_file(),
+        Some(FocusableWidget::FileList) => app.tree.previous_file(),
         _ => (),
     }
 }
 
-fn handle_down(key: KeyEvent, app: &mut App) {
+fn handle_down(key: KeyEvent, app: &mut App<'static>) {
     match app.floating_widget {
         FloatingWidget::AddTorrent => {
             app.next_torrent_file();
@@ -93,14 +93,13 @@ fn handle_down(key: KeyEvent, app: &mut App) {
             }
             let index = app.navigation_stack.len() - 1;
             app.navigation_stack[index].focused_widget = FocusableWidget::FileList;
-            app.selected_file = Some(0);
         }
-        Some(FocusableWidget::FileList) => app.next_file(),
+        Some(FocusableWidget::FileList) => app.tree.next_file(),
         _ => (),
     }
 }
 
-fn handle_right(app: &mut App) {
+fn handle_right(app: &mut App<'static>) {
     match app.floating_widget {
         FloatingWidget::AddTorrent => {
             app.floating_widget = FloatingWidget::AddTorrentConfirm;
@@ -126,11 +125,12 @@ fn handle_right(app: &mut App) {
             });
         }
         Some(FocusableWidget::Tabs) => app.next_tab(),
+        Some(FocusableWidget::FileList) => app.tree.toggle_collapse(),
         _ => (),
     }
 }
 
-fn handle_left(app: &mut App) {
+fn handle_left(app: &mut App<'static>) {
     match app.floating_widget {
         FloatingWidget::AddTorrentConfirm => {
             app.floating_widget = FloatingWidget::AddTorrent;
@@ -150,7 +150,7 @@ fn handle_left(app: &mut App) {
     }
 }
 
-fn handle_help(app: &mut App) {
+fn handle_help(app: &mut App<'static>) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
         return;
     }
@@ -158,7 +158,7 @@ fn handle_help(app: &mut App) {
     app.floating_widget = FloatingWidget::Help;
 }
 
-async fn handle_pause(app: &mut App) {
+async fn handle_pause(app: &mut App<'static>) {
     if let FloatingWidget::AddTorrentConfirm = app.floating_widget {
         app.toggle_add_torrent_paused();
         return;
@@ -168,7 +168,7 @@ async fn handle_pause(app: &mut App) {
     }
 }
 
-async fn handle_rename(app: &mut App) {
+async fn handle_rename(app: &mut App<'static>) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
         return;
     }
@@ -179,14 +179,14 @@ async fn handle_rename(app: &mut App) {
     }
 }
 
-async fn handle_add(app: &mut App) {
+async fn handle_add(app: &mut App<'static>) {
     if let Some(FocusableWidget::TorrentList) = app.last_route_focused_widget() {
         app.floating_widget = FloatingWidget::AddTorrent;
         app.get_torrent_files();
     }
 }
 
-async fn handle_remove(app: &mut App) {
+async fn handle_remove(app: &mut App<'static>) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
         return;
     }
@@ -196,13 +196,13 @@ async fn handle_remove(app: &mut App) {
     }
 }
 
-fn handle_toggle(app: &mut App) {
+fn handle_toggle(app: &mut App<'static>) {
     if let FloatingWidget::RemoveTorrent = app.floating_widget {
         app.delete_files = !app.delete_files;
     }
 }
 
-fn handle_columns(app: &mut App) {
+fn handle_columns(app: &mut App<'static>) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
         return;
     }
@@ -210,7 +210,7 @@ fn handle_columns(app: &mut App) {
     app.floating_widget = FloatingWidget::ModifyColumns;
 }
 
-async fn handle_verify(app: &mut App) {
+async fn handle_verify(app: &mut App<'static>) {
     if !matches!(app.floating_widget, FloatingWidget::None) {
         return;
     }
@@ -220,7 +220,7 @@ async fn handle_verify(app: &mut App) {
     }
 }
 
-async fn handle_enter(app: &mut App) {
+async fn handle_enter(app: &mut App<'static>) {
     match app.floating_widget {
         FloatingWidget::AddTorrentConfirm => {
             app.add_torrent().await;
@@ -235,17 +235,9 @@ async fn handle_enter(app: &mut App) {
         }
         _ => (),
     }
-
-    if let Some(FocusableWidget::FileList) = app.last_route_focused_widget() {
-        app.torrent_collapse_files[app.selected_torrent_file.unwrap()].collapse =
-            !app.torrent_collapse_files[app.selected_torrent_file.unwrap()].collapse;
-        for file in &app.torrent_collapse_files {
-            log::error!("{} | {}", file.collapse, file.path.path().to_str().unwrap());
-        }
-    }
 }
 
-fn handle_esc(app: &mut App) {
+fn handle_esc(app: &mut App<'static>) {
     match app.last_route_focused_widget() {
         Some(FocusableWidget::Tabs) => {
             app.stack_pop();
@@ -254,7 +246,6 @@ fn handle_esc(app: &mut App) {
         Some(FocusableWidget::FileList) => {
             let index = app.navigation_stack.len() - 1;
             app.navigation_stack[index].focused_widget = FocusableWidget::Tabs;
-            app.selected_file = None;
         }
         _ => (),
     }

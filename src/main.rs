@@ -3,6 +3,7 @@ mod config;
 mod conversion;
 mod io_handler;
 mod key_handlers;
+mod tree;
 mod ui;
 
 use crate::ui::draw;
@@ -42,7 +43,7 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 
-async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
+async fn start_ui(app: &Arc<Mutex<App<'static>>>) -> io::Result<()> {
     setup_terminal()?;
     let mut terminal = start_terminal(io::stdout())?;
 
@@ -53,7 +54,6 @@ async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
         let app_mutex = app.clone();
         {
             let mut app = app_mutex.lock().unwrap();
-
             terminal.draw(|f| {
                 draw(f, &mut app);
             })?;
@@ -64,7 +64,7 @@ async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
                 let mut app = app_mutex.lock().unwrap();
                 handler(key, &mut app).await;
             }
-            InputEvent::Tick => (),
+            InputEvent::Tick => {}
         }
 
         {
@@ -75,7 +75,6 @@ async fn start_ui(app: &Arc<Mutex<App>>) -> io::Result<()> {
                 break;
             }
         }
-        // tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     terminal.clear()?;

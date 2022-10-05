@@ -25,3 +25,4 @@ serde = { version = "1.0", features = ["derive"] }
 xdg = "2.4.1"
 config = "0.13.2"
 clippy = "0.0.302"
+dirs = "4.0.0"

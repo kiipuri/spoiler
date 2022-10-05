@@ -1394,6 +1394,7 @@ dependencies = [
  "colors-transform",
  "config",
  "crossterm",
+ "dirs 4.0.0",
  "lava_torrent",
  "log",
  "serde",

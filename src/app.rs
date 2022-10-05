@@ -2,6 +2,7 @@ use std::{
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 
@@ -13,14 +14,15 @@ use transmission_rpc::{
     TransClient,
 };
 use tui::widgets::Row;
-use walkdir::{DirEntry, WalkDir};
+use tui_tree_widget::TreeState;
 
 use crate::{
     config::Config,
     conversion::{
-        compare_float, compare_int, compare_string, convert_rate, date, get_status_percentage,
-        status_string,
+        compare_float, compare_int, compare_string, convert_rate, convert_secs, date,
+        get_status_percentage, status_string,
     },
+    tree::{make_tree, StatefulTree},
 };
 
 pub enum RouteId {
@@ -86,24 +88,18 @@ impl ColumnField {
     }
 }
 
-pub struct CollapsePath {
-    pub path: DirEntry,
-    pub collapse: bool,
-}
-
 pub struct ColumnAndShow {
     pub column: ColumnField,
     pub show: bool,
 }
 
-pub struct App {
+pub struct App<'a> {
     pub session_stats: SessionStats,
     pub config: Config,
     pub navigation_stack: Vec<Route>,
     pub torrents: RpcResponse<Torrents<Torrent>>,
     pub selected_torrent: Option<usize>,
     pub selected_tab: usize,
-    pub selected_file: Option<usize>,
     pub floating_widget: FloatingWidget,
     pub should_quit: bool,
     pub sort_descending: bool,
@@ -116,11 +112,11 @@ pub struct App {
     pub delete_files: bool,
     pub all_info_columns: Vec<ColumnAndShow>,
     pub selected_column: Option<usize>,
-    pub torrent_collapse_files: Vec<CollapsePath>,
+    pub tree: StatefulTree<'a>,
 }
 
-impl App {
-    pub async fn new() -> Self {
+impl<'a> App<'a> {
+    pub async fn new() -> App<'a> {
         let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
         let response: transmission_rpc::types::Result<RpcResponse<SessionGet>> =
             client.session_get().await;
@@ -150,7 +146,6 @@ impl App {
             }],
             floating_widget: FloatingWidget::None,
             selected_torrent: Some(0),
-            selected_file: None,
             selected_tab: 0,
             should_quit: false,
             torrents,
@@ -205,7 +200,7 @@ impl App {
                 },
             ],
             selected_column: Some(0),
-            torrent_collapse_files: Vec::new(),
+            tree: StatefulTree::new(),
         }
     }
 
@@ -225,10 +220,19 @@ impl App {
         }
     }
 
+    fn tree_with_path(&mut self) {
+        let torrent = self.get_selected_torrent();
+        let mut path_str = torrent.download_dir.as_ref().unwrap().to_owned();
+        path_str.push_str(torrent.name.as_ref().unwrap());
+        let path = PathBuf::from_str(&path_str).unwrap();
+        self.tree.items = make_tree(path);
+        self.tree.state = TreeState::default();
+    }
+
     pub fn next(&mut self) {
         self.selected_torrent =
             Some((self.selected_torrent.unwrap() + 1) % self.torrents.arguments.torrents.len());
-        // self.show_tree();
+        self.tree_with_path();
     }
 
     pub fn previous(&mut self) {
@@ -237,7 +241,7 @@ impl App {
         } else {
             self.selected_torrent = Some(self.torrents.arguments.torrents.len() - 1);
         }
-        // self.show_tree();
+        self.tree_with_path();
     }
 
     pub fn next_column(&mut self) {
@@ -271,11 +275,19 @@ impl App {
     }
 
     pub fn next_torrent_file(&mut self) {
+        if self.torrent_files.len() == 0 {
+            return;
+        }
+
         self.selected_torrent_file =
             Some((self.selected_torrent_file.unwrap() + 1) % self.torrent_files.len());
     }
 
     pub fn previous_torrent_file(&mut self) {
+        if self.torrent_files.len() == 0 {
+            return;
+        }
+
         if self.selected_torrent_file > Some(0) {
             self.selected_torrent_file = Some(self.selected_torrent_file.unwrap() - 1);
         } else {
@@ -292,27 +304,14 @@ impl App {
     }
 
     pub fn next_tab(&mut self) {
-        self.selected_tab = (self.selected_tab + 1) % 3;
+        self.selected_tab = (self.selected_tab + 1) % 2;
     }
 
     pub fn previous_tab(&mut self) {
         if self.selected_tab > 0 {
             self.selected_tab -= 1;
         } else {
-            self.selected_tab = 3 - 1;
-        }
-    }
-
-    pub fn next_file(&mut self) {
-        self.selected_file =
-            Some((self.selected_file.unwrap() + 1) % self.torrent_collapse_files.len());
-    }
-
-    pub fn previous_file(&mut self) {
-        if self.selected_file.unwrap() > 0 {
-            self.selected_file = Some(self.selected_file.unwrap() - 1);
-        } else {
-            self.selected_file = Some(self.torrent_collapse_files.len() - 1)
+            self.selected_tab = 2 - 1;
         }
     }
 
@@ -366,7 +365,7 @@ impl App {
                         row_strs.push(torrent.id.unwrap().to_string());
                     }
                     ColumnField::Eta => {
-                        row_strs.push(torrent.eta.unwrap().to_string());
+                        row_strs.push(convert_secs(torrent.eta.unwrap()));
                     }
                     ColumnField::Status => {
                         row_strs.push(status_string(torrent.status.as_ref().unwrap()).to_string());
@@ -461,9 +460,8 @@ impl App {
     pub fn get_torrent_files(&mut self) {
         self.torrent_files.clear();
 
-        match fs::read_dir("/home/kiipuri/Downloads") {
-            Err(e) => log::error!("{}", e),
-            Ok(paths) => {
+        if let Some(dir) = &self.config.torrent_search_dir {
+            if let Ok(paths) = fs::read_dir(dir) {
                 for path in paths {
                     let path = path.unwrap().path();
                     let file = Path::new(&path);
@@ -485,56 +483,19 @@ impl App {
             .unwrap()
     }
 
+    pub fn get_selected_torrent(&self) -> &Torrent {
+        &self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
+    }
+
     pub fn get_selected_torrent_name(&self) -> String {
         self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
             .name
             .to_owned()
             .unwrap()
     }
-
-    pub fn show_tree(&mut self) {
-        self.torrent_collapse_files.clear();
-        let mut files = Vec::new();
-        let mut dir = self.torrents.arguments.torrents[self.selected_torrent.unwrap()]
-            .download_dir
-            .as_ref()
-            .unwrap()
-            .to_owned();
-
-        dir.push_str(&self.get_selected_torrent_name());
-        // TODO: loop torrent.files
-
-        let walker = WalkDir::new(dir)
-            .sort_by(|a, b| b.path().is_dir().cmp(&a.path().is_dir()))
-            .into_iter();
-
-        for entry in walker {
-            let path = CollapsePath {
-                path: entry.unwrap(),
-                collapse: false,
-            };
-            files.push(path);
-        }
-
-        let mut collapse = false;
-        let mut depth = 1;
-
-        for entry in files {
-            if entry.collapse && !collapse {
-                collapse = true;
-                depth = entry.path.depth();
-            } else if collapse && entry.path.depth() == depth {
-                collapse = false;
-            }
-
-            if !collapse {
-                self.torrent_collapse_files.push(entry);
-            }
-        }
-    }
 }
 
-pub async fn get_all_torrents(app: &Arc<Mutex<App>>) {
+pub async fn get_all_torrents<'a>(app: &Arc<Mutex<App<'a>>>) {
     let mut client = TransClient::new("http://localhost:9091/transmission/rpc");
     let mut torrents = client.torrent_get(None, None).await.unwrap();
     let session_stats = client.session_stats().await.unwrap().arguments;

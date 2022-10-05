@@ -1,22 +1,23 @@
 use crate::{
     app::{FloatingWidget, RouteId},
     conversion::{
-        convert_bytes, convert_rate, convert_secs, date, get_percentage, get_status_percentage,
-        status_string,
+        convert_bytes, convert_rate, convert_secs, date, get_status_percentage, status_string,
     },
 };
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Span, Spans, Text},
     widgets::{
-        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Row, Table, TableState, Tabs,
+        Axis, Block, Borders, Chart, Clear, Dataset, List, ListItem, ListState, Paragraph, Row,
+        Table, TableState, Tabs,
     },
     Frame,
 };
 use tui_logger::TuiLoggerWidget;
-use tui_tree_widget::{Tree, TreeItem, TreeState};
+use tui_tree_widget::Tree;
 use unicode_width::UnicodeWidthStr;
 
 use super::app::App;
@@ -215,15 +216,18 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     f.render_widget(session_text, ver_chunks[2]);
 
+    // for node in new_tree {
+    //     log::error!("{:?}", node.path);
+    // }
+
     let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
     f.render_widget(logs, chunks[1]);
 }
 
 fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let tabs = Tabs::new(vec![
-        Spans::from(Span::styled("Overview", Style::default())),
+        Spans::from(Span::styled("Speed", Style::default())),
         Spans::from(Span::styled("Files", Style::default())),
-        Spans::from(Span::styled("tab 3", Style::default())),
     ])
     .block(Block::default().borders(Borders::ALL).title("tabs"))
     .style(app.config.get_style())
@@ -235,167 +239,41 @@ fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     f.render_widget(tabs, chunks[0]);
 
     match app.selected_tab {
-        0 => draw_torrent_info_overview(f, app, chunks[1]),
+        0 => draw_speed_chart(f, app, chunks[1]),
         1 => draw_torrent_info_files(f, app, chunks[1]),
         _ => (),
     }
 }
 
-fn draw_torrent_info_overview<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-    let chunks = Layout::default()
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(area);
+fn draw_speed_chart<B: Backend>(f: &mut Frame<B>, _app: &App, area: Rect) {
+    let speed_block = Block::default().title("Speed").borders(Borders::ALL);
 
-    let torrent = &app.torrents.arguments.torrents[app.selected_torrent.unwrap()];
-
-    let info_block = Block::default().title("Information").borders(Borders::ALL);
-    let info_rows = vec![
-        Row::new(vec!["Name", torrent.name.as_ref().unwrap()]),
-        Row::new(vec![
-            "Total size".to_string(),
-            convert_bytes(*torrent.total_size.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Percent done".to_string(),
-            get_percentage(*torrent.percent_done.as_ref().unwrap()),
-        ]),
-        Row::new(vec!["Path", torrent.download_dir.as_ref().unwrap()]),
+    let datasets = vec![
+        Dataset::default()
+            .name("data1")
+            .marker(symbols::Marker::Braille)
+            .style(Style::default()),
+        // .data(&app.signals.download),
+        Dataset::default()
+            .name("data2")
+            .marker(symbols::Marker::Braille)
+            .style(Style::default())
+            .data(&[]),
     ];
-
-    let info_table = Table::new(info_rows)
-        .style(app.config.get_style())
-        .block(info_block)
-        .style(app.config.get_style())
-        .widths(&[Constraint::Percentage(20), Constraint::Percentage(80)]);
-
-    let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
-    let transfer_rows = vec![
-        Row::new(vec![
-            "Download speed".to_string(),
-            convert_rate(*torrent.rate_download.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Downloaded".to_string(),
-            convert_bytes(
-                *torrent.size_when_done.as_ref().unwrap()
-                    - *torrent.left_until_done.as_ref().unwrap(),
-            ),
-        ]),
-        Row::new(vec![
-            "Upload speed".to_string(),
-            convert_rate(*torrent.rate_upload.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Uploaded".to_string(),
-            convert_bytes(*torrent.uploaded_ever.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Ratio".to_string(),
-            format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Status",
-            status_string(torrent.status.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Eta".to_string(),
-            torrent.eta.as_ref().unwrap().to_string(),
-        ]),
-    ];
-
-    let transfer_table = Table::new(transfer_rows)
-        .block(transfer_block)
-        .style(app.config.get_style())
-        .widths(&[Constraint::Percentage(20), Constraint::Percentage(80)]);
-
-    f.render_widget(info_table, chunks[0]);
-    f.render_widget(transfer_table, chunks[1]);
+    let chart = Chart::new(datasets)
+        .block(speed_block)
+        .x_axis(Axis::default().title("X Axis").bounds([0.0, 10.0]))
+        .y_axis(Axis::default().title("Y Axis").bounds([0.0, 10.0]));
+    f.render_widget(chart, area);
 }
 
 fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
-    let _logs = TuiLoggerWidget::default();
-
-    let tree_items = vec![
-        TreeItem::new_leaf("a"),
-        TreeItem::new(
-            "b",
-            vec![
-                TreeItem::new_leaf("c"),
-                TreeItem::new_leaf("d"),
-                TreeItem::new_leaf("e"),
-            ],
-        ),
-    ];
-
-    let items = Tree::new(tree_items)
-        .block(Block::default().title("tree widget"))
+    let items = Tree::new(&*app.tree.items)
+        .block(Block::default().title("Files").borders(Borders::ALL))
         .style(app.config.get_style())
         .highlight_style(app.config.get_highlight_style());
-    let mut state = TreeState::default();
-    f.render_stateful_widget(items, area, &mut state);
-
-    // app.show_tree();
-    // let mut rows = Vec::new();
-    // let mut collapse = false;
-    // let mut depth = 1;
-    //
-    // for entry in &app.torrent_collapse_files {
-    //     if entry.collapse && !collapse {
-    //         collapse = true;
-    //         depth = entry.path.depth();
-    //     } else if collapse {
-    //         if entry.path.depth() == depth {
-    //             collapse = false;
-    //         }
-    //     }
-    //
-    //     if !collapse {
-    //         rows.push(Row::new(vec![entry.path.path().to_str().unwrap()]));
-    //     }
-    // }
-
-    // let table = Table::new(rows)
-    //     .widths(&[Constraint::Percentage(60), Constraint::Percentage(40)])
-    //     .highlight_style(Style::default().bg(Color::Red));
-    // let mut state = TableState::default();
-    // state.select(app.selected_file);
-
-    // f.render_stateful_widget(table, area, &mut state);
+    f.render_stateful_widget(items, area, &mut app.tree.state);
 }
-// fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
-//     let block = Block::default().title("Files").borders(Borders::ALL);
-//     let mut rows = vec![];
-//     let priorities = app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
-//         .priorities
-//         .as_ref()
-//         .unwrap()
-//         .iter()
-//         .map(|f| f.to_string())
-//         .collect::<Vec<String>>();
-//
-//     let mut index = 0;
-//     for file in app.torrents.arguments.torrents[app.selected_torrent.unwrap()]
-//         .files
-//         .as_ref()
-//         .unwrap()
-//     {
-//         rows.push(Row::new(vec![
-//             file.name.as_str(),
-//             priorities[index].as_str(),
-//         ]));
-//         index += 1;
-//     }
-//
-//     let mut state = TableState::default();
-//     state.select(app.selected_file);
-//
-//     let table = Table::new(rows)
-//         .header(Row::new(vec!["Filename", "Priority"]))
-//         .block(block)
-//         .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
-//         .highlight_style(Style::default().bg(Color::Red));
-//     f.render_stateful_widget(table, area, &mut state);
-// }
 
 fn draw_help<B: Backend>(f: &mut Frame<B>, app: &App) {
     let block = Block::default().title("Help").borders(Borders::ALL);
