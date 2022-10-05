@@ -2,6 +2,8 @@ use std::{fs, path::PathBuf};
 
 use tui_tree_widget::{flatten, TreeItem, TreeState};
 
+use crate::app::App;
+
 pub struct StatefulTree<'a> {
     pub state: TreeState,
     pub items: Vec<TreeItem<'a>>,
@@ -46,7 +48,7 @@ impl<'a> StatefulTree<'a> {
     }
 }
 
-pub fn make_tree(path: PathBuf) -> Vec<TreeItem<'static>> {
+pub fn make_tree(path: PathBuf, app: &App) -> Vec<TreeItem<'static>> {
     let mut files_in_dir = Vec::new();
     let readdir = fs::read_dir(&path);
     if let Err(_) = readdir {
@@ -60,28 +62,40 @@ pub fn make_tree(path: PathBuf) -> Vec<TreeItem<'static>> {
     paths.sort_by_key(|f| !f.path().is_dir());
 
     for file in paths {
-        let item;
-        if file.path().is_dir() {
-            let children = make_tree(file.path());
-            item = TreeItem::new(
-                file.path()
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string(),
-                children,
-            );
-        } else {
-            item = TreeItem::new_leaf(
-                file.path()
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string(),
-            );
-        }
+        for torrent_file in app.get_selected_torrent().files.as_ref().unwrap() {
+            let torrent_file_path = app
+                .get_selected_torrent()
+                .download_dir
+                .as_deref()
+                .unwrap()
+                .to_owned();
+            let torrent_file_path = torrent_file_path + &torrent_file.name;
+            if torrent_file_path == file.path().to_str().unwrap() {
+                let item;
 
-        files_in_dir.push(item);
+                if file.path().is_dir() {
+                    let children = make_tree(file.path(), app);
+                    item = TreeItem::new(
+                        file.path()
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string(),
+                        children,
+                    );
+                } else {
+                    item = TreeItem::new_leaf(
+                        file.path()
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string(),
+                    );
+                }
+
+                files_in_dir.push(item);
+            }
+        }
     }
 
     files_in_dir
