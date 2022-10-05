@@ -92,7 +92,12 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     let info_block = Block::default().title("Information").borders(Borders::ALL);
     let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
-    let sel_torrent = &app.torrents.arguments.torrents[app.selected_torrent.unwrap()];
+
+    if app.torrents.len() == 0usize {
+        return;
+    }
+
+    let sel_torrent = &app.torrents[app.selected_torrent.unwrap()];
     let info_rows = vec![
         Row::new(vec!["Name".to_string(), app.get_selected_torrent_name()]),
         Row::new(vec![
@@ -187,10 +192,22 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
 
     let ses = format!(
         "Down: {}   Up: {}   Downloaded: {}   Uploaded: {}   ",
-        convert_rate(app.session_stats.download_speed),
-        convert_rate(app.session_stats.upload_speed),
-        convert_bytes(app.session_stats.current_stats.downloaded_bytes),
-        convert_bytes(app.session_stats.current_stats.uploaded_bytes),
+        convert_rate(app.session_stats.as_ref().unwrap().download_speed),
+        convert_rate(app.session_stats.as_ref().unwrap().upload_speed),
+        convert_bytes(
+            app.session_stats
+                .as_ref()
+                .unwrap()
+                .current_stats
+                .downloaded_bytes
+        ),
+        convert_bytes(
+            app.session_stats
+                .as_ref()
+                .unwrap()
+                .current_stats
+                .uploaded_bytes
+        ),
     );
 
     let session_block = Block::default()
@@ -215,10 +232,6 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
     f.render_widget(transfer_table, info_transfer_chunks[1]);
 
     f.render_widget(session_text, ver_chunks[2]);
-
-    // for node in new_tree {
-    //     log::error!("{:?}", node.path);
-    // }
 
     let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
     f.render_widget(logs, chunks[1]);
