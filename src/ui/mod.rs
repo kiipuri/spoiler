@@ -4,6 +4,7 @@ use crate::{
         convert_bytes, convert_rate, convert_secs, date, get_status_percentage, status_string,
     },
 };
+
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -42,26 +43,16 @@ pub fn draw<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
 fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(f.size());
-
-    let ver_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Length(f.size().height - 16),
+                Constraint::Length(f.size().height - 17),
                 Constraint::Length(13),
-                Constraint::Length(3),
+                Constraint::Length(4),
             ]
             .as_ref(),
         )
-        .split(chunks[0]);
-
-    let info_transfer_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(ver_chunks[1]);
+        .split(f.size());
 
     let block = Block::default().title("Torrents").borders(Borders::ALL);
     let (header_rows, rows) = app.get_torrent_rows();
@@ -88,159 +79,185 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
         .widths(&widths)
         .style(app.config.get_style())
         .highlight_style(app.config.get_highlight_style());
-    f.render_stateful_widget(table, ver_chunks[0], &mut state);
+    f.render_stateful_widget(table, chunks[0], &mut state);
 
-    let info_block = Block::default().title("Information").borders(Borders::ALL);
-    let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
+    {
+        let session_block = Block::default()
+            .style(app.config.get_style())
+            .borders(Borders::ALL)
+            .title("Session Stats");
 
-    if app.torrents.len() == 0usize {
-        return;
+        let table = Table::new(vec![
+            Row::new(vec![
+                "Down:".to_string(),
+                convert_rate(app.session_stats.as_ref().unwrap().download_speed),
+                "Up:".to_string(),
+                convert_rate(app.session_stats.as_ref().unwrap().upload_speed),
+                "Downloaded:".to_string(),
+                convert_bytes(
+                    app.session_stats
+                        .as_ref()
+                        .unwrap()
+                        .current_stats
+                        .downloaded_bytes,
+                ),
+                "Uploaded:".to_string(),
+                convert_bytes(
+                    app.session_stats
+                        .as_ref()
+                        .unwrap()
+                        .current_stats
+                        .uploaded_bytes,
+                ),
+            ]),
+            Row::new(vec![
+                "Slow Mode:".to_string(),
+                app.session.as_ref().unwrap().alt_speed_enabled.to_string(),
+                "Slow Mode Down:".to_string(),
+                convert_rate(app.session.as_ref().unwrap().alt_speed_down * 1000),
+                "Slow Mode Up:".to_string(),
+                convert_rate(app.session.as_ref().unwrap().alt_speed_up * 1000),
+            ]),
+        ])
+        .widths(&[
+            Constraint::Min(12),
+            Constraint::Min(10),
+            Constraint::Min(16),
+            Constraint::Min(14),
+            Constraint::Min(14),
+            Constraint::Min(14),
+            Constraint::Min(14),
+            Constraint::Min(14),
+        ])
+        .block(session_block);
+        f.render_widget(table, chunks[2]);
     }
 
-    let sel_torrent = &app.torrents[app.selected_torrent.unwrap()];
-    let info_rows = vec![
-        Row::new(vec!["Name".to_string(), app.get_selected_torrent_name()]),
-        Row::new(vec![
-            "Status",
-            status_string(sel_torrent.status.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Total Size".to_string(),
-            convert_bytes(sel_torrent.total_size.unwrap()),
-        ]),
-        Row::new(vec![
-            "Progress".to_string(),
-            get_status_percentage(sel_torrent),
-        ]),
-        Row::new(vec![
-            "Save Path".to_string(),
-            sel_torrent.download_dir.as_ref().unwrap().to_string(),
-        ]),
-        Row::new(vec![
-            "Date Added".to_string(),
-            date(sel_torrent.added_date.unwrap()),
-        ]),
-        Row::new(vec![
-            "Date Completed".to_string(),
-            date(sel_torrent.done_date.unwrap()),
-        ]),
-        Row::new(vec![
-            "Info Hash".to_string(),
-            sel_torrent.hash_string.as_ref().unwrap().to_string(),
-        ]),
-        Row::new(vec![
-            "Comment".to_string(),
-            sel_torrent.comment.as_ref().unwrap().to_string(),
-        ]),
-        Row::new(vec![
-            "Created On".to_string(),
-            sel_torrent.creator.as_ref().unwrap().to_string(),
-        ]),
-        Row::new(vec![
-            "Pieces".to_string(),
-            sel_torrent.piece_count.as_ref().unwrap().to_string(),
-        ]),
-    ];
+    {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+            .split(chunks[1]);
 
-    let transfer_rows = vec![
-        Row::new(vec![
-            "Time Active".to_string(),
-            convert_secs(
-                sel_torrent.seconds_downloading.unwrap() + sel_torrent.seconds_seeding.unwrap(),
-            ),
-        ]),
-        Row::new(vec![
-            "Downloaded".to_string(),
-            convert_bytes(
-                sel_torrent.size_when_done.as_ref().unwrap()
-                    - sel_torrent.left_until_done.as_ref().unwrap(),
-            ),
-        ]),
-        Row::new(vec![
-            "Download Speed".to_string(),
-            convert_rate(sel_torrent.rate_download.unwrap()),
-        ]),
-        Row::new(vec![
-            "Download Limit".to_string(),
-            convert_rate(sel_torrent.download_limit.unwrap() * 1000),
-        ]),
-        Row::new(vec![
-            "Uploaded".to_string(),
-            convert_bytes(*sel_torrent.uploaded_ever.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Upload Speed".to_string(),
-            convert_rate(*sel_torrent.rate_upload.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Upload Limit".to_string(),
-            convert_rate(*sel_torrent.upload_limit.as_ref().unwrap() * 1000),
-        ]),
-        Row::new(vec![
-            "Ratio".to_string(),
-            format!("{:.2}", sel_torrent.upload_ratio.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Eta".to_string(),
-            convert_secs(*sel_torrent.eta.as_ref().unwrap()),
-        ]),
-        Row::new(vec![
-            "Connections".to_string(),
-            sel_torrent.peers_connected.unwrap().to_string(),
-        ]),
-    ];
+        let info_block = Block::default().title("Information").borders(Borders::ALL);
+        let transfer_block = Block::default().title("Transfer").borders(Borders::ALL);
 
-    let ses = format!(
-        "Down: {}   Up: {}   Downloaded: {}   Uploaded: {}   ",
-        convert_rate(app.session_stats.as_ref().unwrap().download_speed),
-        convert_rate(app.session_stats.as_ref().unwrap().upload_speed),
-        convert_bytes(
-            app.session_stats
-                .as_ref()
-                .unwrap()
-                .current_stats
-                .downloaded_bytes
-        ),
-        convert_bytes(
-            app.session_stats
-                .as_ref()
-                .unwrap()
-                .current_stats
-                .uploaded_bytes
-        ),
-    );
+        if app.torrents.is_empty() {
+            return;
+        }
 
-    let session_block = Block::default()
-        .style(app.config.get_style())
-        .borders(Borders::ALL)
-        .title("Session Stats");
+        let sel_torrent = &app.torrents[app.selected_torrent.unwrap()];
+        let info_rows = vec![
+            Row::new(vec!["Name".to_string(), app.get_selected_torrent_name()]),
+            Row::new(vec![
+                "Status",
+                status_string(sel_torrent.status.as_ref().unwrap()),
+            ]),
+            Row::new(vec![
+                "Total Size".to_string(),
+                convert_bytes(sel_torrent.total_size.unwrap()),
+            ]),
+            Row::new(vec![
+                "Progress".to_string(),
+                get_status_percentage(sel_torrent),
+            ]),
+            Row::new(vec![
+                "Save Path".to_string(),
+                sel_torrent.download_dir.as_ref().unwrap().to_string(),
+            ]),
+            Row::new(vec![
+                "Date Added".to_string(),
+                date(sel_torrent.added_date.unwrap()),
+            ]),
+            Row::new(vec![
+                "Date Completed".to_string(),
+                date(sel_torrent.done_date.unwrap()),
+            ]),
+            Row::new(vec![
+                "Info Hash".to_string(),
+                sel_torrent.hash_string.as_ref().unwrap().to_string(),
+            ]),
+            Row::new(vec![
+                "Comment".to_string(),
+                sel_torrent.comment.as_ref().unwrap().to_string(),
+            ]),
+            Row::new(vec![
+                "Created On".to_string(),
+                sel_torrent.creator.as_ref().unwrap().to_string(),
+            ]),
+            Row::new(vec![
+                "Pieces".to_string(),
+                sel_torrent.piece_count.as_ref().unwrap().to_string(),
+            ]),
+        ];
 
-    let session_text = Paragraph::new(ses)
-        .block(session_block)
-        .style(app.config.get_style());
+        let transfer_rows = vec![
+            Row::new(vec![
+                "Time Active".to_string(),
+                convert_secs(
+                    sel_torrent.seconds_downloading.unwrap() + sel_torrent.seconds_seeding.unwrap(),
+                ),
+            ]),
+            Row::new(vec![
+                "Downloaded".to_string(),
+                convert_bytes(
+                    sel_torrent.size_when_done.as_ref().unwrap()
+                        - sel_torrent.left_until_done.as_ref().unwrap(),
+                ),
+            ]),
+            Row::new(vec![
+                "Download Speed".to_string(),
+                convert_rate(sel_torrent.rate_download.unwrap()),
+            ]),
+            Row::new(vec![
+                "Download Limit".to_string(),
+                convert_rate(sel_torrent.download_limit.unwrap() * 1000),
+            ]),
+            Row::new(vec![
+                "Uploaded".to_string(),
+                convert_bytes(*sel_torrent.uploaded_ever.as_ref().unwrap()),
+            ]),
+            Row::new(vec![
+                "Upload Speed".to_string(),
+                convert_rate(*sel_torrent.rate_upload.as_ref().unwrap()),
+            ]),
+            Row::new(vec![
+                "Upload Limit".to_string(),
+                convert_rate(*sel_torrent.upload_limit.as_ref().unwrap() * 1000),
+            ]),
+            Row::new(vec![
+                "Ratio".to_string(),
+                format!("{:.2}", sel_torrent.upload_ratio.as_ref().unwrap()),
+            ]),
+            Row::new(vec![
+                "Eta".to_string(),
+                convert_secs(*sel_torrent.eta.as_ref().unwrap()),
+            ]),
+            Row::new(vec![
+                "Connections".to_string(),
+                sel_torrent.peers_connected.unwrap().to_string(),
+            ]),
+        ];
 
-    let info_table = Table::new(info_rows)
-        .block(info_block)
-        .style(app.config.get_style())
-        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)]);
-    f.render_widget(info_table, info_transfer_chunks[0]);
+        let info_table = Table::new(info_rows)
+            .block(info_block)
+            .style(app.config.get_style())
+            .widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
+        f.render_widget(info_table, chunks[0]);
 
-    let transfer_table = Table::new(transfer_rows)
-        .block(transfer_block)
-        .style(app.config.get_style())
-        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)]);
-    f.render_widget(transfer_table, info_transfer_chunks[1]);
-
-    f.render_widget(session_text, ver_chunks[2]);
-
-    let logs = TuiLoggerWidget::default().block(block.clone().title("Logs"));
-    f.render_widget(logs, chunks[1]);
+        let transfer_table = Table::new(transfer_rows)
+            .block(transfer_block)
+            .style(app.config.get_style())
+            .widths(&[Constraint::Percentage(30), Constraint::Percentage(70)]);
+        f.render_widget(transfer_table, chunks[1]);
+    }
 }
 
 fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let tabs = Tabs::new(vec![
         Spans::from(Span::styled("Speed", Style::default())),
         Spans::from(Span::styled("Files", Style::default())),
+        Spans::from(Span::styled("Logs", Style::default())),
     ])
     .block(Block::default().borders(Borders::ALL).title("tabs"))
     .style(app.config.get_style())
@@ -254,29 +271,36 @@ fn draw_torrent_info<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     match app.selected_tab {
         0 => draw_speed_chart(f, app, chunks[1]),
         1 => draw_torrent_info_files(f, app, chunks[1]),
+        2 => logs(f, app, chunks[1]),
         _ => (),
     }
 }
 
-fn draw_speed_chart<B: Backend>(f: &mut Frame<B>, _app: &App, area: Rect) {
+fn draw_speed_chart<B: Backend>(f: &mut Frame<B>, app: &App, area: Rect) {
     let speed_block = Block::default().title("Speed").borders(Borders::ALL);
 
     let datasets = vec![
         Dataset::default()
-            .name("data1")
+            .name("Download")
             .marker(symbols::Marker::Braille)
-            .style(Style::default()),
-        // .data(&app.signals.download),
+            .style(app.config.get_style().fg(Color::LightGreen))
+            .graph_type(tui::widgets::GraphType::Line)
+            .data(&app.data.download),
         Dataset::default()
-            .name("data2")
+            .name("Upload")
             .marker(symbols::Marker::Braille)
-            .style(Style::default())
-            .data(&[]),
+            .style(app.config.get_style().fg(Color::Blue))
+            .graph_type(tui::widgets::GraphType::Line)
+            .data(&app.data.upload),
     ];
     let chart = Chart::new(datasets)
         .block(speed_block)
-        .x_axis(Axis::default().title("X Axis").bounds([0.0, 10.0]))
-        .y_axis(Axis::default().title("Y Axis").bounds([0.0, 10.0]));
+        .style(app.config.get_style())
+        .x_axis(Axis::default().bounds([0.0, 10.0]))
+        .y_axis(Axis::default().bounds([0.0, app.data.height]).labels(vec![
+            Span::raw(""),
+            Span::raw(convert_rate(app.data.height as i64)),
+        ]));
     f.render_widget(chart, area);
 }
 
@@ -286,6 +310,12 @@ fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Re
         .style(app.config.get_style())
         .highlight_style(app.config.get_highlight_style());
     f.render_stateful_widget(items, area, &mut app.tree.state);
+}
+
+fn logs<B: Backend>(f: &mut Frame<B>, _app: &mut App, area: Rect) {
+    let logs =
+        TuiLoggerWidget::default().block(Block::default().title("Logs").borders(Borders::ALL));
+    f.render_widget(logs, area);
 }
 
 fn draw_help<B: Backend>(f: &mut Frame<B>, app: &App) {

@@ -40,7 +40,6 @@ async fn main() -> io::Result<()> {
         loop {
             let app = app.clone();
             get_all_torrents(&app).await;
-            drop(app);
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
@@ -74,7 +73,10 @@ async fn start_ui(app: &Arc<Mutex<App<'static>>>) -> io::Result<()> {
         }
 
         {
-            let app = app_mutex.lock().unwrap();
+            let mut app = app_mutex.lock().unwrap();
+            let download = app.session_stats.as_ref().unwrap().download_speed;
+            let upload = app.session_stats.as_ref().unwrap().upload_speed;
+            app.data.on_tick(download, upload);
 
             if app.should_quit {
                 events.close();

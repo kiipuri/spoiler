@@ -1,3 +1,5 @@
+use math::round;
+
 use std::{
     ffi::OsStr,
     fs,
@@ -7,7 +9,9 @@ use std::{
 };
 
 use transmission_rpc::{
-    types::{Id, SessionStats, Torrent, TorrentAction, TorrentAddArgs, TorrentGetField},
+    types::{
+        Id, SessionGet, SessionStats, Torrent, TorrentAction, TorrentAddArgs, TorrentGetField,
+    },
     TransClient,
 };
 use tui::widgets::Row;
@@ -90,8 +94,61 @@ pub struct ColumnAndShow {
     pub show: bool,
 }
 
+pub struct Data {
+    pub download: Vec<(f64, f64)>,
+    pub upload: Vec<(f64, f64)>,
+    pub height: f64,
+}
+
+impl Data {
+    fn new() -> Data {
+        let data = vec![(10.0, 0.0)];
+        let data1 = vec![(10.0, 0.0)];
+        Data {
+            download: data,
+            upload: data1,
+            height: 10000.0,
+        }
+    }
+
+    pub fn on_tick(&mut self, download: i64, upload: i64) {
+        if self.download.first().unwrap().0 <= 0.0 {
+            self.download.remove(0);
+        }
+        if self.upload.first().unwrap().0 <= 0.0 {
+            self.upload.remove(0);
+        }
+        let mut max_download = 0.0;
+        for point in &mut self.download {
+            point.0 -= 0.1;
+            if max_download < point.1 {
+                max_download = round::ceil(point.1, -1);
+            }
+        }
+
+        let mut max_upload = 0.0;
+        for point in &mut self.upload {
+            point.0 -= 0.1;
+            if max_upload < point.1 {
+                max_upload = round::ceil(point.1, -point.1.log10().ceil() as i8);
+            }
+        }
+
+        if max_download > max_upload {
+            self.height = max_download;
+        } else {
+            self.height = max_upload;
+        }
+
+        let last_x = self.download.last().unwrap().0;
+        self.download.push((last_x + 0.1, download as f64));
+        self.upload.push((last_x + 0.1, upload as f64));
+    }
+}
+
 pub struct App<'a> {
     pub session_stats: Option<SessionStats>,
+    pub session: Option<SessionGet>,
     pub config: Config,
     pub navigation_stack: Vec<Route>,
     pub torrents: Vec<Torrent>,
@@ -110,12 +167,14 @@ pub struct App<'a> {
     pub all_info_columns: Vec<ColumnAndShow>,
     pub selected_column: Option<usize>,
     pub tree: StatefulTree<'a>,
+    pub data: Data,
 }
 
 impl<'a> App<'a> {
     pub async fn new() -> App<'a> {
         Self {
             session_stats: None,
+            session: None,
             config: Config::new(),
             navigation_stack: vec![Route {
                 id: RouteId::TorrentList,
@@ -178,6 +237,7 @@ impl<'a> App<'a> {
             ],
             selected_column: Some(0),
             tree: StatefulTree::new(),
+            data: Data::new(),
         }
     }
 
@@ -202,7 +262,8 @@ impl<'a> App<'a> {
         let mut path_str = torrent.download_dir.as_ref().unwrap().to_owned();
         path_str.push_str(torrent.name.as_ref().unwrap());
         let path = PathBuf::from_str(&path_str).unwrap();
-        self.tree.items = make_tree(path, &self);
+        let mut skipped_dirs: Vec<PathBuf> = Vec::new();
+        self.tree.items = make_tree(path, self, &mut skipped_dirs);
         self.tree.state = TreeState::default();
     }
 
@@ -251,7 +312,7 @@ impl<'a> App<'a> {
     }
 
     pub fn next_torrent_file(&mut self) {
-        if self.torrent_files.len() == 0 {
+        if self.torrent_files.is_empty() {
             return;
         }
 
@@ -260,7 +321,7 @@ impl<'a> App<'a> {
     }
 
     pub fn previous_torrent_file(&mut self) {
-        if self.torrent_files.len() == 0 {
+        if self.torrent_files.is_empty() {
             return;
         }
 
@@ -280,14 +341,14 @@ impl<'a> App<'a> {
     }
 
     pub fn next_tab(&mut self) {
-        self.selected_tab = (self.selected_tab + 1) % 2;
+        self.selected_tab = (self.selected_tab + 1) % 3;
     }
 
     pub fn previous_tab(&mut self) {
         if self.selected_tab > 0 {
             self.selected_tab -= 1;
         } else {
-            self.selected_tab = 2 - 1;
+            self.selected_tab = 3 - 1;
         }
     }
 
@@ -474,6 +535,7 @@ pub async fn get_all_torrents<'a>(app: &Arc<Mutex<App<'a>>>) {
         .arguments
         .torrents;
     let session_stats = client.session_stats().await.unwrap().arguments;
+    let session = client.session_get().await.unwrap().arguments;
 
     let mut app = app.lock().unwrap();
 
@@ -497,4 +559,5 @@ pub async fn get_all_torrents<'a>(app: &Arc<Mutex<App<'a>>>) {
     }
     app.torrents = torrents;
     app.session_stats = Some(session_stats);
+    app.session = Some(session);
 }
