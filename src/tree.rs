@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, str::FromStr};
 
 use tui_tree_widget::{flatten, TreeItem, TreeState};
 
@@ -48,10 +48,14 @@ impl<'a> StatefulTree<'a> {
     }
 }
 
-pub fn make_tree(path: PathBuf, app: &App) -> Vec<TreeItem<'static>> {
+pub fn make_tree(
+    path: PathBuf,
+    app: &App,
+    files_done: &mut Vec<PathBuf>,
+) -> Vec<TreeItem<'static>> {
     let mut files_in_dir = Vec::new();
     let readdir = fs::read_dir(&path);
-    if let Err(_) = readdir {
+    if readdir.is_err() {
         return vec![TreeItem::new_leaf(
             path.file_name().unwrap().to_string_lossy().to_string(),
         )];
@@ -61,7 +65,14 @@ pub fn make_tree(path: PathBuf, app: &App) -> Vec<TreeItem<'static>> {
     paths.sort_by_key(|f| f.path());
     paths.sort_by_key(|f| !f.path().is_dir());
 
-    for file in paths {
+    'outer: for file in paths {
+        for done in &*files_done {
+            if file.path().starts_with(done) {
+                continue 'outer;
+            }
+        }
+
+        let mut is_torrent_file = false;
         for torrent_file in app.get_selected_torrent().files.as_ref().unwrap() {
             let torrent_file_path = app
                 .get_selected_torrent()
@@ -70,32 +81,42 @@ pub fn make_tree(path: PathBuf, app: &App) -> Vec<TreeItem<'static>> {
                 .unwrap()
                 .to_owned();
             let torrent_file_path = torrent_file_path + &torrent_file.name;
-            if torrent_file_path == file.path().to_str().unwrap() {
-                let item;
+            let torrent_file_path = PathBuf::from_str(&torrent_file_path).unwrap();
 
-                if file.path().is_dir() {
-                    let children = make_tree(file.path(), app);
-                    item = TreeItem::new(
-                        file.path()
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .to_string(),
-                        children,
-                    );
-                } else {
-                    item = TreeItem::new_leaf(
-                        file.path()
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .to_string(),
-                    );
-                }
-
-                files_in_dir.push(item);
+            if file.path().starts_with(&torrent_file_path)
+                || torrent_file_path.starts_with(file.path())
+            {
+                is_torrent_file = true;
+                break;
             }
         }
+
+        if !is_torrent_file {
+            files_done.push(file.path());
+            continue;
+        }
+
+        let item = if file.path().is_dir() {
+            let children = make_tree(file.path(), app, files_done);
+            TreeItem::new(
+                file.path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                children,
+            )
+        } else {
+            TreeItem::new_leaf(
+                file.path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        };
+
+        files_in_dir.push(item);
     }
 
     files_in_dir
