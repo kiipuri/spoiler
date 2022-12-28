@@ -259,9 +259,10 @@ impl<'a> App<'a> {
 
     pub fn tree_with_path(&mut self) {
         let torrent = self.get_selected_torrent();
-        let mut path_str = torrent.download_dir.as_ref().unwrap().to_owned();
-        path_str.push_str(torrent.name.as_ref().unwrap());
-        let path = PathBuf::from_str(&path_str).unwrap();
+        let path_str = torrent.download_dir.as_ref().unwrap().to_owned();
+        let mut path = PathBuf::from_str(&path_str).unwrap();
+        let torrent_name_path = PathBuf::from_str(torrent.name.as_ref().unwrap());
+        path = path.join(torrent_name_path.unwrap());
         let mut skipped_dirs: Vec<PathBuf> = Vec::new();
         self.tree.items = make_tree(path, self, &mut skipped_dirs);
         self.tree.state = TreeState::default();
