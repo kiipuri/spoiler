@@ -9,7 +9,7 @@ mod ui;
 use crate::ui::draw;
 use app::{get_all_torrents, App};
 use crossterm::{
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use io_handler::{Events, InputEvent};
@@ -88,6 +88,7 @@ async fn start_ui(app: &Arc<Mutex<App<'static>>>) -> io::Result<()> {
     terminal.clear()?;
     terminal.show_cursor()?;
     disable_raw_mode()?;
+    io::stdout().execute(LeaveAlternateScreen)?;
     Ok(())
 }
 
