@@ -74,14 +74,9 @@ pub fn make_tree(
 
         let mut is_torrent_file = false;
         for torrent_file in app.get_selected_torrent().files.as_ref().unwrap() {
-            let torrent_file_path = app
-                .get_selected_torrent()
-                .download_dir
-                .as_deref()
-                .unwrap()
-                .to_owned();
-            let torrent_file_path = torrent_file_path + &torrent_file.name;
-            let torrent_file_path = PathBuf::from_str(&torrent_file_path).unwrap();
+            let download_dir = app.get_selected_torrent().download_dir.as_deref().unwrap();
+            let mut torrent_file_path = PathBuf::from_str(download_dir).unwrap();
+            torrent_file_path = torrent_file_path.join(&torrent_file.name);
 
             if file.path().starts_with(&torrent_file_path)
                 || torrent_file_path.starts_with(file.path())
