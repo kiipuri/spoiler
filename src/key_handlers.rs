@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tui_tree_widget::TreeState;
 
 use crate::app::{App, FloatingWidget, FocusableWidget, InputMode, Route, RouteId};
 
@@ -93,6 +94,7 @@ fn handle_down(key: KeyEvent, app: &mut App<'static>) {
             }
             let index = app.navigation_stack.len() - 1;
             app.navigation_stack[index].focused_widget = FocusableWidget::FileList;
+            app.tree.next_file();
         }
         Some(FocusableWidget::FileList) => app.tree.next_file(),
         _ => (),
@@ -247,6 +249,7 @@ fn handle_esc(app: &mut App<'static>) {
         Some(FocusableWidget::FileList) => {
             let index = app.navigation_stack.len() - 1;
             app.navigation_stack[index].focused_widget = FocusableWidget::Tabs;
+            app.tree.state = TreeState::default();
         }
         _ => (),
     }
