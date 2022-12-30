@@ -20,7 +20,7 @@ use tui_tree_widget::TreeState;
 use crate::{
     config::Config,
     conversion::{
-        compare_float, compare_int, compare_string, convert_rate, convert_secs, date,
+        compare_float, compare_int, compare_string, convert_rate, convert_secs, date, get_ratio,
         get_status_percentage, status_string,
     },
     tree::{make_tree, StatefulTree},
@@ -414,7 +414,10 @@ impl<'a> App<'a> {
                         row_strs.push(convert_rate(*torrent.rate_upload.as_ref().unwrap()));
                     }
                     ColumnField::UploadRatio => {
-                        row_strs.push(format!("{:.2}", torrent.upload_ratio.as_ref().unwrap()));
+                        row_strs.push(format!(
+                            "{:.2}",
+                            get_ratio(torrent.uploaded_ever.unwrap(), torrent.have_valid.unwrap())
+                        ));
                     }
                     ColumnField::DoneDate => {
                         row_strs.push(date(torrent.done_date.unwrap()));

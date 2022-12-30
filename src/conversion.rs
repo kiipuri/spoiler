@@ -124,3 +124,16 @@ pub fn compare_float(a: f32, b: f32) -> Ordering {
 pub fn compare_string(a: &String, b: &String) -> Ordering {
     a.cmp(b)
 }
+
+pub fn get_ratio(up: i64, down: i64) -> f32 {
+    let up = up as f32;
+    let down = down as f32;
+    let ratio: f32;
+    if down == 0.0 {
+        ratio = 0.0;
+    } else {
+        ratio = up / down;
+    }
+
+    ratio
+}

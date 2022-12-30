@@ -1,7 +1,8 @@
 use crate::{
     app::{FloatingWidget, RouteId},
     conversion::{
-        convert_bytes, convert_rate, convert_secs, date, get_status_percentage, status_string,
+        convert_bytes, convert_rate, convert_secs, date, get_ratio, get_status_percentage,
+        status_string,
     },
 };
 
@@ -227,7 +228,13 @@ fn draw_torrent_list<B: Backend>(f: &mut Frame<B>, app: &App) {
             ]),
             Row::new(vec![
                 "Ratio".to_string(),
-                format!("{:.2}", sel_torrent.upload_ratio.as_ref().unwrap()),
+                format!(
+                    "{:.2}",
+                    get_ratio(
+                        sel_torrent.uploaded_ever.unwrap(),
+                        sel_torrent.have_valid.unwrap()
+                    )
+                ),
             ]),
             Row::new(vec![
                 "Eta".to_string(),
@@ -312,9 +319,10 @@ fn draw_torrent_info_files<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Re
     f.render_stateful_widget(items, area, &mut app.tree.state);
 }
 
-fn logs<B: Backend>(f: &mut Frame<B>, _app: &mut App, area: Rect) {
-    let logs =
-        TuiLoggerWidget::default().block(Block::default().title("Logs").borders(Borders::ALL));
+fn logs<B: Backend>(f: &mut Frame<B>, app: &mut App, area: Rect) {
+    let logs = TuiLoggerWidget::default()
+        .block(Block::default().title("Logs").borders(Borders::ALL))
+        .style(app.config.get_style());
     f.render_widget(logs, area);
 }
 
