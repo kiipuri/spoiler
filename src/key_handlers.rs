@@ -176,6 +176,7 @@ async fn handle_rename(app: &mut App<'static>) {
     if let Some(FocusableWidget::TorrentList) = app.last_route_focused_widget() {
         app.floating_widget = FloatingWidget::Input;
         app.input_mode = InputMode::Editing;
+        app.input = app.get_selected_torrent_name();
     }
 }
 
