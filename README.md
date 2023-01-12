@@ -1,5 +1,5 @@
 # Spoiler
-A TUI frontend for Transmission
+A TUI frontend for [Transmission](https://transmissionbt.com/)
 
 ![spoiler](https://user-images.githubusercontent.com/47101041/210192751-df84db10-86d1-41b6-888a-2a651c28a754.gif)
 
@@ -8,6 +8,8 @@ A TUI frontend for Transmission
 Spoiler uses my fork of [transmission-rpc](https://github.com/kiipuri/transmission-rpc) at the moment
 
 ## Building
+
+Building spoiler requires [Rust](https://www.rust-lang.org/).
 
 1. Clone transmission-rpc and spoiler
 ```bash
